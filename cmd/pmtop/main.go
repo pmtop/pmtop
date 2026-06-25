@@ -8,9 +8,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/pmtop/pmtop/internal/app"
+	"github.com/pmtop/pmtop/internal/collector"
+	"github.com/pmtop/pmtop/internal/platform"
 	"github.com/pmtop/pmtop/internal/version"
 )
 
@@ -29,6 +34,22 @@ Run without a subcommand to start the interactive TUI. Use the "list",
 
 See "pmtop help" and the man page pmtop(8) for full documentation.`,
 	Version: version.Short(),
+	RunE:    runTUI,
+}
+
+// runTUI launches the interactive TUI using the real /proc collector.
+func runTUI(cmd *cobra.Command, _ []string) error {
+	if !platform.IsLinux() {
+		return fmt.Errorf("pmtop TUI requires Linux /proc")
+	}
+	src := collector.New(collector.NewOSFS(), collector.DefaultProcRoot)
+	root := platform.CurrentUID() == 0
+	m := app.New(src, version.Short(), root, 2*time.Second)
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := p.Run(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func init() {

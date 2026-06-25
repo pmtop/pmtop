@@ -13,7 +13,7 @@
 |--------|------|------|------|
 | 脚手架 | 项目结构、go.mod、Makefile、CI、goreleaser | ✅ 完成 | VM `go build`/`vet`/`run` 通过 |
 | M1 | 核心采集层（procfs/inode/process/cgroup/docker） | ✅ 完成 | 单测覆盖 91.4%/86.3%；VM 对 `ss` 计数一致；真实 Docker 容器检测 ID 匹配 `docker ps` |
-| M2 | TUI 外壳 | 待开始 | |
+| M2 | TUI 外壳 | ✅ 完成 | 单测 83.5%；VM 真实 /proc 单帧渲染通过（顶栏/8列表格/状态符号/底栏；root/user 徽标；PID 解析） |
 | M3 | 过滤系统 | 待开始 | |
 | M4 | 进程与容器 | 待开始 | |
 | M5 | 特权与配置 | 待开始 | |
@@ -46,6 +46,18 @@
 - [x] VM 真实 Docker 容器：cgroup v2 检测 `Runtime=docker`，ContainerID 与 `docker ps` 一致
 - [ ] docker Engine API 富信息客户端（FR-05-03，归入 M4）
 
+### M2 TUI 外壳
+- [x] `internal/app`：Model/Update/View + DataSource 接口（解耦 /proc）
+- [x] `internal/app/keymap.go`：可配置按键绑定（PRD 6.4，`k`=上移/`K`=发信号，记录偏离）
+- [x] `internal/app/sort.go`：多列排序（端口/PID/进程/状态/地址/协议/容器），默认 Proto+端口
+- [x] `internal/ui`：8 列表格、状态符号+着色、`NO_COLOR` 处理、顶/底栏
+- [x] 导航：↑↓/jk、PgUp/PgDn、Home/End
+- [x] 自动刷新（2s，可配）、暂停/恢复（Space）、手动刷新（r）、光标保持
+- [x] `internal/platform`：CurrentUID（build tag 分离，跨平台编译）
+- [x] `cmd/pmtop`：root 命令启动 TUI
+- [x] 单测：app 83.5% / ui 89%
+- [x] VM 真实 /proc 单帧渲染冒烟通过
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -55,3 +67,5 @@
 | 2026-06-25 | M1 单测：`go test -race -cover ./internal/collector/... ./pkg/netstat/...` | 通过（91.4% / 86.3%） |
 | 2026-06-25 | M1 真实 /proc：socket 计数 vs `ss`（TCP 19/UDP 14/Unix 171/LISTEN 11） | 一致 |
 | 2026-06-25 | M1 真实 Docker 容器：cgroup 检测 ContainerID vs `docker ps` | 一致 |
+| 2026-06-25 | M2 单测：`go test -race -cover ./internal/app/... ./internal/ui/...` | 通过（83.5% / 89%） |
+| 2026-06-25 | M2 真实 /proc：TUI 单帧渲染（顶栏/表格/状态符号/底栏，root 徽标+PID） | 通过 |
