@@ -45,6 +45,17 @@ Run without a subcommand to start the interactive TUI. Use the "list",
 "kill", and "info" subcommands for non-interactive, scriptable output.
 
 See "pmtop help" and the man page pmtop(8) for full documentation.`,
+	Example: `  # Start the interactive TUI (run as root for full visibility)
+  sudo pmtop
+
+  # Run as the current user only, no sudo banner (CI/automation)
+  pmtop --no-elevate
+
+  # Use a 1-second refresh interval
+  pmtop --interval 1s
+
+  # Non-interactive listing
+  pmtop list --proto tcp --state LISTEN --json`,
 	Version: version.Short(),
 	RunE:    runTUI,
 }
@@ -144,6 +155,10 @@ func handleNonRoot(st elevate.State) error {
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the pmtop version",
+	Long: `Print the pmtop version, commit, and build date as injected at link time.
+Useful for bug reports and verifying installed builds.`,
+	Example: `  pmtop version
+  pmtop version --help`,
 	Run: func(cmd *cobra.Command, _ []string) {
 		fmt.Fprintln(cmd.OutOrStdout(), version.String())
 	},

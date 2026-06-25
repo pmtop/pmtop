@@ -18,7 +18,7 @@
 | M4 | 进程与容器 | ✅ 完成 | 单测 app 81.5%/process 85.4%/collector 82.7%；VM 端到端：host-net 容器 nginx:8099 → TUI 显示 PID+进程+容器名 `pmtoptest`（Docker API 解析），详情/信号对话框单测通过 |
 | M5 | 特权与配置 | ✅ 完成 | 单测 config 82.5%/export 85.4%；VM `--help`/`version`/`--no-elevate`/flags 正常；TUI `e` 导出 JSON、`SetConfig` 接线、NO_COLOR/色盲、分层 TOML 加载 |
 | M6 | CLI 模式 | ✅ 完成 | VM `list`(TSV/JSON/CSV+过滤)、`info`(text/JSON)、`kill`(SIGTERM 终止子进程 exit 143) 全部正常；buildListFilter 单测覆盖 |
-| M7 | 手册与补全 | 待开始 | |
+| M7 | 手册与补全 | ✅ 完成 | VM `pmtop man` 生成 11 个 man 页（pmtop.8 含 NAME/SYNOPSIS/DESCRIPTION/EXAMPLES）；bash/zsh/fish 补全生成正常 |
 | M8 | CI/CD 与打包 | 待开始 | |
 | M9 | 发布准备 | 待开始 | |
 
@@ -98,6 +98,13 @@
 - [x] buildListFilter/formatSocketRow 单测
 - [x] VM 验证：list 三格式+过滤、info text/json、kill SIGTERM 终止子进程（exit 143）
 
+### M7 手册与补全
+- [x] `pmtop man --output-dir`：cobra GenManTree 生成 man 页（PRD 8.2）
+- [x] 命令补 Long/Example（root/version/list/kill/info/man，PRD 8.3）
+- [x] bash/zsh/fish 补全：cobra 内置 `completion` 子命令（PRD 9）
+- [x] Makefile `man`/`completions` 目标接线
+- [x] VM 验证：11 个 man 页生成、三 shell 补全生成
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -116,3 +123,4 @@
 | 2026-06-25 | M5 单测：config 82.5% / export 85.4% / app 81.2% | 通过 |
 | 2026-06-25 | M5 VM 冒烟：`--help`/`version`/`--no-elevate`/flags、TUI `e` 导出 | 通过 |
 | 2026-06-25 | M6 VM：`list`(TSV/JSON/CSV+过滤)、`info`(text/json)、`kill`(SIGTERM exit 143) | 通过 |
+| 2026-06-25 | M7 VM：`pmtop man` 生成 11 个 man 页、bash/zsh/fish 补全生成 | 通过 |
