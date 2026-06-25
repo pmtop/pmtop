@@ -37,3 +37,6 @@ sshd.md
 # local sync artifacts
 pmtop-src.tar.gz
 *.src.tar.gz
+
+# local dev scratch programs (synced to VM for manual checks, not shipped)
+dev/
