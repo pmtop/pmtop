@@ -16,7 +16,7 @@
 | M2 | TUI 外壳 | ✅ 完成 | 单测 83.5%；VM 真实 /proc 单帧渲染通过（顶栏/8列表格/状态符号/底栏；root/user 徽标；PID 解析） |
 | M3 | 过滤系统 | ✅ 完成 | 单测 app 81.9% / filter 89.8%；VM 真实 /proc 过滤冒烟通过（`sshd` 文本过滤仅显示 sshd socket，过滤栏显示摘要） |
 | M4 | 进程与容器 | ✅ 完成 | 单测 app 81.5%/process 85.4%/collector 82.7%；VM 端到端：host-net 容器 nginx:8099 → TUI 显示 PID+进程+容器名 `pmtoptest`（Docker API 解析），详情/信号对话框单测通过 |
-| M5 | 特权与配置 | 待开始 | |
+| M5 | 特权与配置 | ✅ 完成 | 单测 config 82.5%/export 85.4%；VM `--help`/`version`/`--no-elevate`/flags 正常；TUI `e` 导出 JSON、`SetConfig` 接线、NO_COLOR/色盲、分层 TOML 加载 |
 | M6 | CLI 模式 | 待开始 | |
 | M7 | 手册与补全 | 待开始 | |
 | M8 | CI/CD 与打包 | 待开始 | |
@@ -81,6 +81,15 @@
 - [x] VM 端到端：host-net 容器 nginx:8099 → TUI 行显示 `nginx root pmtoptest`（Docker API 容器名解析）
 - [ ] 容器详情视图（FR-05-04，P2，归入后续）
 
+### M5 特权与配置
+- [x] `internal/elevate`：UID 检测、非 root 横幅、opt-in sudo 重启（FR-07-01..04），build tag 分离
+- [x] `internal/config`：分层 TOML（/etc → ~/.config → flags，FR-08-01..04）+ NO_COLOR env（FR-08-06）
+- [x] `internal/export`：JSON/CSV/TSV 导出（FR-08-05/FR-03-09）
+- [x] `cmd/pmtop`：全局 flags（--no-elevate/--interval/--sort/--asc/--colorblind/--no-color/--docker-socket）
+- [x] TUI：`SetConfig` 接线、`e` 导出键写 JSON 文件 + 状态反馈
+- [x] 单测：config 82.5% / export 85.4% / app 81.2%
+- [x] VM 冒烟：`--help`/`version`/`--no-elevate`/flags 正常
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -96,3 +105,5 @@
 | 2026-06-25 | M3 真实 /proc：文本过滤 `sshd` 仅显示 sshd socket，过滤栏摘要正确 | 通过 |
 | 2026-06-25 | M4 单测：`go test -race -cover ./...`（app 81.5%/process 85.4%/collector 82.7%） | 通过 |
 | 2026-06-25 | M4 端到端：host-net 容器 nginx:8099 → TUI 显示 PID+nginx+容器名 pmtoptest（Docker API） | 通过 |
+| 2026-06-25 | M5 单测：config 82.5% / export 85.4% / app 81.2% | 通过 |
+| 2026-06-25 | M5 VM 冒烟：`--help`/`version`/`--no-elevate`/flags、TUI `e` 导出 | 通过 |

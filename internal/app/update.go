@@ -61,13 +61,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateTable handles keys in the default table-navigation mode.
 func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if len(m.socks) == 0 && !keyMatches(msg, m.keys.Quit) && !keyMatches(msg, m.keys.Search) && !keyMatches(msg, m.keys.Filter) {
-		return m, nil
-	}
+	// Export and quit work even on an empty table; navigation/search/filter
+	// are skipped when there are no rows.
+	empty := len(m.socks) == 0
 	switch {
 	case keyMatches(msg, m.keys.Quit):
 		m.quitting = true
 		return m, tea.Quit
+	case keyMatches(msg, m.keys.Export):
+		m.doExport()
+		return m, nil
+	case empty && !keyMatches(msg, m.keys.Search) && !keyMatches(msg, m.keys.Filter):
+		return m, nil
 
 	case keyMatches(msg, m.keys.Pause):
 		m.paused = !m.paused
@@ -144,7 +149,7 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, m.keys.Kill):
 		m.openSignal()
 		return m, nil
-	case keyMatches(msg, m.keys.Export, m.keys.Help):
+	case keyMatches(msg, m.keys.Help):
 		m.setStatus("not available yet", time.Second)
 		return m, nil
 	}

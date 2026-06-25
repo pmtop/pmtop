@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,4 +256,35 @@ func TestUpdate_HelpNotAvailable(t *testing.T) {
 	m.RefreshNow()
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF1})
 	assert.Contains(t, mm.(Model).statusMsg, "not available")
+}
+
+func TestUpdate_ExportWritesFile(t *testing.T) {
+	// Run in a temp working dir so the export file is isolated and cleaned up.
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { os.Chdir(cwd) })
+
+	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.RefreshNow()
+	mm, _ := m.Update(keyMsg('e'))
+	m = mm.(Model)
+	assert.Contains(t, m.statusMsg, "exported pmtop-export-")
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+	var found bool
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".json") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "export created a json file")
+}
+
+func TestUpdate_ExportEmpty(t *testing.T) {
+	m := New(&fakeSource{socks: nil}, "1.0.0", false, 2*time.Second)
+	m.RefreshNow()
+	mm, _ := m.Update(keyMsg('e'))
+	assert.Contains(t, mm.(Model).statusMsg, "nothing to export")
 }

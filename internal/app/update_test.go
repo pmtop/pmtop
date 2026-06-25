@@ -128,8 +128,8 @@ func TestUpdate_WindowSize(t *testing.T) {
 func TestUpdate_NotAvailableHint(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.refresh()
-	// Export is reserved (M5); shows a hint for now.
-	mm, _ := m.Update(keyMsg('e'))
+	// F1 (help) is not yet implemented; shows a hint.
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF1})
 	assert.Contains(t, mm.(Model).statusMsg, "not available")
 }
 

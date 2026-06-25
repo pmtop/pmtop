@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/pmtop/pmtop/internal/config"
 	"github.com/pmtop/pmtop/internal/filter"
 	"github.com/pmtop/pmtop/internal/ui"
 	"github.com/pmtop/pmtop/pkg/netstat"
@@ -64,6 +65,7 @@ type Model struct {
 	detail *DetailState
 	signal *SignalState
 	sender SignalSender
+	cfg    config.Config
 
 	width, height int
 
@@ -250,6 +252,15 @@ func (m *Model) SetFilter(f filter.Filter) {
 func (m *Model) SetSignalSender(s SignalSender) {
 	if s != nil {
 		m.sender = s
+	}
+}
+
+// SetConfig applies runtime configuration (refresh interval, sort, colorblind,
+// etc.) after construction. Wired by cmd/pmtop from layered config + flags.
+func (m *Model) SetConfig(cfg config.Config) {
+	m.cfg = cfg
+	if d := cfg.Interval(); d > 0 {
+		m.interval = d
 	}
 }
 

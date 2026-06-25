@@ -3,6 +3,7 @@ module github.com/pmtop/pmtop
 go 1.23.0
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/charmbracelet/bubbles v0.20.0
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/lipgloss v1.1.0
