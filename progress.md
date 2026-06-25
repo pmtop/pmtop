@@ -14,7 +14,7 @@
 | 脚手架 | 项目结构、go.mod、Makefile、CI、goreleaser | ✅ 完成 | VM `go build`/`vet`/`run` 通过 |
 | M1 | 核心采集层（procfs/inode/process/cgroup/docker） | ✅ 完成 | 单测覆盖 91.4%/86.3%；VM 对 `ss` 计数一致；真实 Docker 容器检测 ID 匹配 `docker ps` |
 | M2 | TUI 外壳 | ✅ 完成 | 单测 83.5%；VM 真实 /proc 单帧渲染通过（顶栏/8列表格/状态符号/底栏；root/user 徽标；PID 解析） |
-| M3 | 过滤系统 | 待开始 | |
+| M3 | 过滤系统 | ✅ 完成 | 单测 app 81.9% / filter 89.8%；VM 真实 /proc 过滤冒烟通过（`sshd` 文本过滤仅显示 sshd socket，过滤栏显示摘要） |
 | M4 | 进程与容器 | 待开始 | |
 | M5 | 特权与配置 | 待开始 | |
 | M6 | CLI 模式 | 待开始 | |
@@ -58,6 +58,16 @@
 - [x] 单测：app 83.5% / ui 89%
 - [x] VM 真实 /proc 单帧渲染冒烟通过
 
+### M3 过滤系统
+- [x] `internal/filter`：Filter 结构 + Match/Apply + Summary（AND 逻辑 FR-03-07）
+- [x] 端口范围解析（80, 80,443, 8080-8090, 混合，去重排序 FR-03-01）
+- [x] 协议/状态多选解析（FR-03-02/03）
+- [x] CIDR 解析（IPv4/IPv6，裸 IP 当 /32 或 /128，FR-03-05）
+- [x] 进程/PID/用户/容器模糊（大小写不敏感 FR-03-04/06）
+- [x] TUI 集成：`/` 实时搜索、`f` 过滤表单（多字段+Tab）、`Esc` 清空（FR-03-08）、过滤栏摘要
+- [x] 单测：filter 89.8% / app 81.9%
+- [x] VM 真实 /proc 过滤冒烟通过
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -69,3 +79,5 @@
 | 2026-06-25 | M1 真实 Docker 容器：cgroup 检测 ContainerID vs `docker ps` | 一致 |
 | 2026-06-25 | M2 单测：`go test -race -cover ./internal/app/... ./internal/ui/...` | 通过（83.5% / 89%） |
 | 2026-06-25 | M2 真实 /proc：TUI 单帧渲染（顶栏/表格/状态符号/底栏，root 徽标+PID） | 通过 |
+| 2026-06-25 | M3 单测：`go test -race -cover ./internal/filter/... ./internal/app/...` | 通过（89.8% / 81.9%） |
+| 2026-06-25 | M3 真实 /proc：文本过滤 `sshd` 仅显示 sshd socket，过滤栏摘要正确 | 通过 |

@@ -1,22 +1,26 @@
 package app
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/pmtop/pmtop/internal/filter"
 	"github.com/pmtop/pmtop/internal/ui"
 )
 
 // Update handles all messages: window resizing, refresh ticks, and key events.
+// Key handling depends on the current interaction mode.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.tbl.SetWidth(msg.Width)
-		// Reserve 2 lines for top status + bottom hint bars.
 		h := msg.Height - 2
 		if h < 3 {
 			h = 3
@@ -26,7 +30,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		// Schedule the next tick regardless of pause state.
 		cmds := []tea.Cmd{tickCmd(m.interval)}
 		if !m.paused {
 			m.refresh()
@@ -38,73 +41,279 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Nothing to navigate if there are no rows.
-		if len(m.socks) == 0 && !keyMatches(msg, m.keys.Quit) {
-			return m, nil
-		}
-		switch {
-		case keyMatches(msg, m.keys.Quit):
-			m.quitting = true
-			return m, tea.Quit
-
-		case keyMatches(msg, m.keys.Pause):
-			m.paused = !m.paused
-			if m.paused {
-				m.setStatus("[PAUSED]", 0)
-			} else {
-				m.setStatus("resumed", 2*time.Second)
-			}
-			return m, nil
-
-		case keyMatches(msg, m.keys.Refresh):
-			m.refresh()
-			m.setStatus("refreshed", time.Second)
-			return m, nil
-
-		case keyMatches(msg, m.keys.Sort):
-			m.sortKey = m.sortKey.next()
-			m.applySort()
-			m.setStatus("sort: "+m.sortKey.String()+" asc", 2*time.Second)
-			return m, nil
-
-		case keyMatches(msg, m.keys.SortDir):
-			m.sortAsc = !m.sortAsc
-			m.applySort()
-			dir := "asc"
-			if !m.sortAsc {
-				dir = "desc"
-			}
-			m.setStatus("sort: "+m.sortKey.String()+" "+dir, 2*time.Second)
-			return m, nil
-
-		case keyMatches(msg, m.keys.Up):
-			m.tbl.MoveUp(1)
-			return m, nil
-		case keyMatches(msg, m.keys.Down):
-			m.tbl.MoveDown(1)
-			return m, nil
-		case keyMatches(msg, m.keys.PageUp):
-			m.tbl.MoveUp(m.tbl.Height())
-			return m, nil
-		case keyMatches(msg, m.keys.PageDn):
-			m.tbl.MoveDown(m.tbl.Height())
-			return m, nil
-		case keyMatches(msg, m.keys.Home):
-			m.tbl.GotoTop()
-			return m, nil
-		case keyMatches(msg, m.keys.End):
-			m.tbl.GotoBottom()
-			return m, nil
-
-		// Actions wired in later milestones; show a hint for now.
-		case keyMatches(msg, m.keys.Enter, m.keys.Search, m.keys.Filter,
-			m.keys.Kill, m.keys.Export, m.keys.Help):
-			m.setStatus("not available yet", time.Second)
-			return m, nil
+		switch m.mode {
+		case modeSearch:
+			return m.updateSearch(msg)
+		case modeFilter:
+			return m.updateFilterForm(msg)
+		default:
+			return m.updateTable(msg)
 		}
 	}
 
 	return m, nil
+}
+
+// updateTable handles keys in the default table-navigation mode.
+func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.socks) == 0 && !keyMatches(msg, m.keys.Quit) && !keyMatches(msg, m.keys.Search) && !keyMatches(msg, m.keys.Filter) {
+		return m, nil
+	}
+	switch {
+	case keyMatches(msg, m.keys.Quit):
+		m.quitting = true
+		return m, tea.Quit
+
+	case keyMatches(msg, m.keys.Pause):
+		m.paused = !m.paused
+		if m.paused {
+			m.setStatus("[PAUSED]", 0)
+		} else {
+			m.setStatus("resumed", 2*time.Second)
+		}
+		return m, nil
+
+	case keyMatches(msg, m.keys.Refresh):
+		m.refresh()
+		m.setStatus("refreshed", time.Second)
+		return m, nil
+
+	case keyMatches(msg, m.keys.Sort):
+		m.sortKey = m.sortKey.next()
+		m.applySort()
+		m.setStatus("sort: "+m.sortKey.String()+" asc", 2*time.Second)
+		return m, nil
+
+	case keyMatches(msg, m.keys.SortDir):
+		m.sortAsc = !m.sortAsc
+		m.applySort()
+		dir := "asc"
+		if !m.sortAsc {
+			dir = "desc"
+		}
+		m.setStatus("sort: "+m.sortKey.String()+" "+dir, 2*time.Second)
+		return m, nil
+
+	case keyMatches(msg, m.keys.Search):
+		m.mode = modeSearch
+		m.searchInput.Reset()
+		m.searchInput.Focus()
+		return m, textinput.Blink
+
+	case keyMatches(msg, m.keys.Filter):
+		m.enterFilterForm()
+		return m, textinput.Blink
+
+	case keyMatches(msg, m.keys.Escape):
+		// In table mode Esc clears all active filters (FR-03-08).
+		if !m.filt.IsEmpty() {
+			m.filt = filter.Filter{}
+			m.rebuild()
+			m.clampCursor()
+			m.setStatus("filters cleared", 2*time.Second)
+		}
+		return m, nil
+
+	case keyMatches(msg, m.keys.Up):
+		m.tbl.MoveUp(1)
+		return m, nil
+	case keyMatches(msg, m.keys.Down):
+		m.tbl.MoveDown(1)
+		return m, nil
+	case keyMatches(msg, m.keys.PageUp):
+		m.tbl.MoveUp(m.tbl.Height())
+		return m, nil
+	case keyMatches(msg, m.keys.PageDn):
+		m.tbl.MoveDown(m.tbl.Height())
+		return m, nil
+	case keyMatches(msg, m.keys.Home):
+		m.tbl.GotoTop()
+		return m, nil
+	case keyMatches(msg, m.keys.End):
+		m.tbl.GotoBottom()
+		return m, nil
+
+	case keyMatches(msg, m.keys.Enter, m.keys.Kill, m.keys.Export, m.keys.Help):
+		m.setStatus("not available yet", time.Second)
+		return m, nil
+	}
+	return m, nil
+}
+
+// updateSearch handles the '/' free-text search input (real-time filter).
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter, tea.KeyEscape:
+		// Exit search mode, keeping the typed filter applied.
+		m.searchInput.Blur()
+		m.mode = modeTable
+		m.clampCursor()
+		return m, nil
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	}
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	m.filt.Text = m.searchInput.Value()
+	if m.full != nil {
+		m.rebuild()
+		m.clampCursor()
+	}
+	return m, cmd
+}
+
+// enterFilterForm opens the filter form, pre-populating inputs from the active
+// filter and saving a draft to restore on cancel.
+func (m *Model) enterFilterForm() {
+	m.mode = modeFilter
+	m.filtDraft = m.filt
+	m.populateFilterInputs()
+	m.filterFocus = 0
+	for i := range m.filterInputs {
+		m.filterInputs[i].Blur()
+	}
+	m.filterInputs[0].Focus()
+}
+
+// populateFilterInputs fills the form inputs from the active filter.
+func (m *Model) populateFilterInputs() {
+	set := func(i int, v string) { m.filterInputs[i].SetValue(v) }
+	set(0, filter.PortRangeString(m.filt.Ports))
+	if len(m.filt.Protocols) > 0 {
+		names := make([]string, len(m.filt.Protocols))
+		for i, p := range m.filt.Protocols {
+			names[i] = string(p)
+		}
+		set(1, strings.Join(names, ","))
+	}
+	if len(m.filt.States) > 0 {
+		names := make([]string, len(m.filt.States))
+		for i, s := range m.filt.States {
+			names[i] = s.String()
+		}
+		set(2, strings.Join(names, ","))
+	}
+	set(3, m.filt.Process)
+	if m.filt.PID != 0 {
+		set(4, strconv.Itoa(m.filt.PID))
+	}
+	set(5, m.filt.User)
+	set(6, m.filt.Container)
+	if m.filt.LocalCIDR != nil {
+		set(7, m.filt.LocalCIDR.String())
+	}
+	if m.filt.RemoteCIDR != nil {
+		set(8, m.filt.RemoteCIDR.String())
+	}
+}
+
+// updateFilterForm handles the 'f' filter form: Tab cycles fields, Enter
+// applies, Esc cancels.
+func (m Model) updateFilterForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		f, err := m.buildFilterFromInputs()
+		if err != nil {
+			m.setStatus("filter error: "+err.Error(), 3*time.Second)
+			return m, nil
+		}
+		m.filt = f
+		m.rebuild()
+		m.clampCursor()
+		m.exitFilterForm()
+		m.setStatus("filter applied", 2*time.Second)
+		return m, nil
+	case tea.KeyEscape:
+		m.filt = m.filtDraft
+		m.rebuild()
+		m.clampCursor()
+		m.exitFilterForm()
+		m.setStatus("filter cancelled", 2*time.Second)
+		return m, nil
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	case tea.KeyTab, tea.KeyDown:
+		m.filterInputs[m.filterFocus].Blur()
+		m.filterFocus = (m.filterFocus + 1) % len(m.filterInputs)
+		m.filterInputs[m.filterFocus].Focus()
+		return m, textinput.Blink
+	case tea.KeyShiftTab, tea.KeyUp:
+		m.filterInputs[m.filterFocus].Blur()
+		m.filterFocus = (m.filterFocus - 1 + len(m.filterInputs)) % len(m.filterInputs)
+		m.filterInputs[m.filterFocus].Focus()
+		return m, textinput.Blink
+	}
+	var cmd tea.Cmd
+	m.filterInputs[m.filterFocus], cmd = m.filterInputs[m.filterFocus].Update(msg)
+	return m, cmd
+}
+
+// exitFilterForm returns to table mode and clears the form inputs.
+func (m *Model) exitFilterForm() {
+	m.mode = modeTable
+	for i := range m.filterInputs {
+		m.filterInputs[i].Blur()
+		m.filterInputs[i].Reset()
+	}
+}
+
+// buildFilterFromInputs parses the form inputs into a Filter, preserving the
+// free-text search field. Returns an error on the first invalid field.
+func (m Model) buildFilterFromInputs() (filter.Filter, error) {
+	f := m.filt // preserve Text
+	f.Ports, f.Protocols, f.States = nil, nil, nil
+	f.Process, f.PID, f.User, f.Container = "", 0, "", ""
+	f.LocalCIDR, f.RemoteCIDR = nil, nil
+
+	get := func(i int) string { return strings.TrimSpace(m.filterInputs[i].Value()) }
+	if v := get(0); v != "" {
+		p, err := filter.ParsePorts(v)
+		if err != nil {
+			return f, err
+		}
+		f.Ports = p
+	}
+	if v := get(1); v != "" {
+		p, err := filter.ParseProtocols(v)
+		if err != nil {
+			return f, err
+		}
+		f.Protocols = p
+	}
+	if v := get(2); v != "" {
+		s, err := filter.ParseStates(v)
+		if err != nil {
+			return f, err
+		}
+		f.States = s
+	}
+	f.Process = get(3)
+	if v := get(4); v != "" {
+		pid, err := strconv.Atoi(v)
+		if err != nil {
+			return f, err
+		}
+		f.PID = pid
+	}
+	f.User = get(5)
+	f.Container = get(6)
+	if v := get(7); v != "" {
+		c, err := filter.ParseCIDR(v)
+		if err != nil {
+			return f, err
+		}
+		f.LocalCIDR = c
+	}
+	if v := get(8); v != "" {
+		c, err := filter.ParseCIDR(v)
+		if err != nil {
+			return f, err
+		}
+		f.RemoteCIDR = c
+	}
+	return f, nil
 }
 
 // keyMatches reports whether the key event matches any of the bindings.

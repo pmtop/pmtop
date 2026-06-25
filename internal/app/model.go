@@ -4,8 +4,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/pmtop/pmtop/internal/filter"
 	"github.com/pmtop/pmtop/internal/ui"
 	"github.com/pmtop/pmtop/pkg/netstat"
 )
@@ -19,6 +21,18 @@ type DataSource interface {
 // tickMsg is emitted on each refresh interval.
 type tickMsg time.Time
 
+// mode is the current interaction mode of the TUI.
+type mode int
+
+const (
+	modeTable  mode = iota // default: navigating the port table
+	modeSearch             // '/' free-text search input
+	modeFilter             // 'f' filter form
+)
+
+// filterFields labels the inputs in the filter form, in order.
+var filterFields = []string{"Ports", "Protocols", "States", "Process", "PID", "User", "Container", "Local CIDR", "Remote CIDR"}
+
 // Model is the Bubble Tea model for the pmtop TUI.
 type Model struct {
 	source   DataSource
@@ -31,10 +45,19 @@ type Model struct {
 	paused   bool
 	quitting bool
 
-	socks   []netstat.SocketInfo
-	tbl     table.Model
-	sortKey SortKey
-	sortAsc bool
+	full  []netstat.SocketInfo // raw snapshot from the source
+	socks []netstat.SocketInfo // filtered + sorted (displayed)
+	filt  filter.Filter
+
+	tbl      table.Model
+	sortKey  SortKey
+	sortAsc  bool
+
+	mode         mode
+	searchInput  textinput.Model
+	filterInputs []textinput.Model
+	filterFocus  int
+	filtDraft    filter.Filter // saved filter to restore on cancel
 
 	width, height int
 
@@ -52,7 +75,7 @@ func New(src DataSource, version string, root bool, interval time.Duration) Mode
 		table.WithColumns(ui.BuildColumns(120)),
 		table.WithHeight(10),
 	)
-	return Model{
+	m := Model{
 		source:  src,
 		keys:    DefaultKeyMap(),
 		style:   style,
@@ -63,6 +86,30 @@ func New(src DataSource, version string, root bool, interval time.Duration) Mode
 		sortAsc: true,
 		tbl:     tbl,
 	}
+	m.searchInput = newSearchInput()
+	m.filterInputs = newFilterInputs()
+	return m
+}
+
+// newSearchInput builds the '/' free-text search field.
+func newSearchInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "search process / PID / user / container"
+	ti.CharLimit = 64
+	ti.Width = 40
+	return ti
+}
+
+// newFilterInputs builds the filter form fields (one textinput per column).
+func newFilterInputs() []textinput.Model {
+	inputs := make([]textinput.Model, len(filterFields))
+	for i := range inputs {
+		ti := textinput.New()
+		ti.CharLimit = 80
+		ti.Width = 30
+		inputs[i] = ti
+	}
+	return inputs
 }
 
 // Init starts the first refresh and the refresh ticker.
@@ -83,24 +130,31 @@ func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// refresh performs a data snapshot, re-sorts, rebuilds table rows, and
-// preserves the cursor on the same socket when possible (FR-02-01).
+// refresh performs a data snapshot, applies the filter, re-sorts, rebuilds
+// table rows, and preserves the cursor on the same socket when possible
+// (FR-02-01).
 func (m *Model) refresh() {
 	prev := m.socks
 	prevCursor := m.tbl.Cursor()
 
-	socks, err := m.source.Collect()
-	m.socks = socks
+	full, err := m.source.Collect()
+	m.full = full
 	m.err = err
 	if err == nil {
-		SortSockets(m.socks, m.sortKey, m.sortAsc)
-		m.tbl.SetRows(ui.RowsFromSockets(m.socks, m.style))
+		m.rebuild()
 		m.preserveCursor(prev, prevCursor)
 	}
 	m.lastRefresh = time.Now()
 }
 
-// applySort re-sorts the current snapshot and rebuilds rows without refetching.
+// rebuild re-applies the filter to the full snapshot, sorts, and sets rows.
+func (m *Model) rebuild() {
+	m.socks = filter.Apply(m.full, m.filt)
+	SortSockets(m.socks, m.sortKey, m.sortAsc)
+	m.tbl.SetRows(ui.RowsFromSockets(m.socks, m.style))
+}
+
+// applySort re-sorts the current (filtered) snapshot and rebuilds rows.
 func (m *Model) applySort() {
 	if len(m.socks) == 0 {
 		return
@@ -169,14 +223,29 @@ func (m Model) currentSocket() (netstat.SocketInfo, bool) {
 	return m.socks[c], true
 }
 
-// Socks returns the current snapshot (for testing/inspection).
+// Socks returns the current filtered snapshot (for testing/inspection).
 func (m Model) Socks() []netstat.SocketInfo { return m.socks }
+
+// Filter returns the active filter (for testing/inspection).
+func (m Model) Filter() filter.Filter { return m.filt }
+
+// SetFilter replaces the active filter and rebuilds the view (for tests/CLI).
+func (m *Model) SetFilter(f filter.Filter) {
+	m.filt = f
+	if m.full != nil {
+		m.rebuild()
+		m.clampCursor()
+	}
+}
 
 // Err returns the last collection error, if any (for non-interactive use).
 func (m Model) Err() error { return m.err }
 
 // Cursor returns the current cursor index (for testing).
 func (m Model) Cursor() int { return m.tbl.Cursor() }
+
+// Mode returns the current interaction mode (for testing).
+func (m Model) Mode() mode { return m.mode }
 
 // Resize sets the viewport size and rebuilds the table layout. Intended for
 // non-interactive rendering (smoke tests, snapshots).

@@ -128,8 +128,23 @@ func TestUpdate_WindowSize(t *testing.T) {
 func TestUpdate_NotAvailableHint(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.refresh()
-	m = updateKey(m, 'f')
-	assert.Contains(t, m.statusMsg, "not available")
+	// Enter is reserved for the detail panel (M4); shows a hint for now.
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.Contains(t, mm.(Model).statusMsg, "not available")
+}
+
+func TestUpdate_FilterFormEnters(t *testing.T) {
+	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.refresh()
+	mm, _ := m.Update(keyMsg('f'))
+	assert.Equal(t, modeFilter, mm.(Model).Mode())
+}
+
+func TestUpdate_SearchEnters(t *testing.T) {
+	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.refresh()
+	mm, _ := m.Update(keyMsg('/'))
+	assert.Equal(t, modeSearch, mm.(Model).Mode())
 }
 
 func TestUpdate_RefreshMsg(t *testing.T) {
