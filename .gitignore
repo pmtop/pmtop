@@ -33,3 +33,7 @@ Thumbs.db
 # local-only dev files (credentials, ssh info)
 ssh.md
 sshd.md
+
+# local sync artifacts
+pmtop-src.tar.gz
+*.src.tar.gz
