@@ -19,7 +19,7 @@
 | M5 | 特权与配置 | ✅ 完成 | 单测 config 82.5%/export 85.4%；VM `--help`/`version`/`--no-elevate`/flags 正常；TUI `e` 导出 JSON、`SetConfig` 接线、NO_COLOR/色盲、分层 TOML 加载 |
 | M6 | CLI 模式 | ✅ 完成 | VM `list`(TSV/JSON/CSV+过滤)、`info`(text/JSON)、`kill`(SIGTERM 终止子进程 exit 143) 全部正常；buildListFilter 单测覆盖 |
 | M7 | 手册与补全 | ✅ 完成 | VM `pmtop man` 生成 11 个 man 页（pmtop.8 含 NAME/SYNOPSIS/DESCRIPTION/EXAMPLES）；bash/zsh/fish 补全生成正常 |
-| M8 | CI/CD 与打包 | 待开始 | |
+| M8 | CI/CD 与打包 | ✅ 完成 | `make build-all` 交叉编译 amd64(11M)+arm64(9.9M) 静态 stripped ELF；goreleaser/ci/release YAML 语法校验通过；nfpm/AUR/homebrew 配置就绪 |
 | M9 | 发布准备 | 待开始 | |
 
 ## 详细日志
@@ -105,6 +105,14 @@
 - [x] Makefile `man`/`completions` 目标接线
 - [x] VM 验证：11 个 man 页生成、三 shell 补全生成
 
+### M8 CI/CD 与打包
+- [x] `make build-all`：交叉编译 amd64 + arm64，CGO 禁用，-trimpath -ldflags -s -w
+- [x] VM 验证：amd64 ELF 可运行、arm64 aarch64 ELF、均静态链接 stripped
+- [x] `.goreleaser.yaml`：builds/archives/nfpms(deb+rpm)/aurs/brews/release，YAML 语法校验通过
+- [x] `.github/workflows/ci.yml`：lint/test(覆盖率阈值)/build-all
+- [x] `.github/workflows/release.yml`：tag→goreleaser→deb/rpm 冒烟测试
+- [ ] goreleaser `release --snapshot` 本地全流程（goreleaser 二进制下载超时，留待 CI）
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -124,3 +132,5 @@
 | 2026-06-25 | M5 VM 冒烟：`--help`/`version`/`--no-elevate`/flags、TUI `e` 导出 | 通过 |
 | 2026-06-25 | M6 VM：`list`(TSV/JSON/CSV+过滤)、`info`(text/json)、`kill`(SIGTERM exit 143) | 通过 |
 | 2026-06-25 | M7 VM：`pmtop man` 生成 11 个 man 页、bash/zsh/fish 补全生成 | 通过 |
+| 2026-06-25 | M8 `make build-all`：amd64(11M)+arm64(9.9M) 静态 stripped ELF | 通过 |
+| 2026-06-25 | M8 goreleaser/ci/release YAML 语法校验 | 通过 |

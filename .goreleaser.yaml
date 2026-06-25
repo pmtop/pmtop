@@ -37,7 +37,6 @@ archives:
       - LICENSE
       - README.md
       - man/pmtop.8
-      - man/pmtop.toml.5
       - completions/bash/pmtop
       - completions/zsh/_pmtop
       - completions/fish/pmtop.fish
@@ -76,8 +75,6 @@ nfpms:
     contents:
       - src: man/pmtop.8
         dst: /usr/share/man/man8/pmtop.8
-      - src: man/pmtop.toml.5
-        dst: /usr/share/man/man5/pmtop.toml.5
       - src: completions/bash/pmtop
         dst: /usr/share/bash-completion/completions/pmtop
       - src: completions/zsh/_pmtop
@@ -106,7 +103,6 @@ aurs:
       install -Dm755 "./pmtop" "{{ .PkgDir }}/usr/bin/pmtop"
       # man
       install -Dm644 "./man/pmtop.8" "{{ .PkgDir }}/usr/share/man/man8/pmtop.8"
-      install -Dm644 "./man/pmtop.toml.5" "{{ .PkgDir }}/usr/share/man/man5/pmtop.toml.5"
       # completions
       install -Dm644 "./completions/bash/pmtop" "{{ .PkgDir }}/usr/share/bash-completion/completions/pmtop"
       install -Dm644 "./completions/zsh/_pmtop" "{{ .PkgDir }}/usr/share/zsh/site-functions/_pmtop"
@@ -124,9 +120,9 @@ aurs:
       license=('MIT')
       provides=('pmtop')
       conflicts=('pmtop')
-      source_x86_64=("${{ url }}/releases/download/{{ .Tag }}/{{ .ArtifactName }}")
+      source_x86_64=("${url}/releases/download/{{ .Tag }}/{{ .ArtifactName }}")
       sha256sums_x86_64=('{{ .Sha256 }}')
-      source_aarch64=("${{ url }}/releases/download/{{ .Tag }}/{{ .ArtifactName }}")
+      source_aarch64=("${url}/releases/download/{{ .Tag }}/{{ .ArtifactName }}")
       sha256sums_aarch64=('{{ .Sha256 }}')
 
       package() {
