@@ -28,6 +28,8 @@ const (
 	modeTable  mode = iota // default: navigating the port table
 	modeSearch             // '/' free-text search input
 	modeFilter             // 'f' filter form
+	modeDetail             // 'Enter' process detail side panel
+	modeSignal             // 'K' signal selection dialog
 )
 
 // filterFields labels the inputs in the filter form, in order.
@@ -59,6 +61,10 @@ type Model struct {
 	filterFocus  int
 	filtDraft    filter.Filter // saved filter to restore on cancel
 
+	detail *DetailState
+	signal *SignalState
+	sender SignalSender
+
 	width, height int
 
 	lastRefresh time.Time
@@ -88,6 +94,7 @@ func New(src DataSource, version string, root bool, interval time.Duration) Mode
 	}
 	m.searchInput = newSearchInput()
 	m.filterInputs = newFilterInputs()
+	m.sender = realSender{}
 	return m
 }
 
@@ -235,6 +242,14 @@ func (m *Model) SetFilter(f filter.Filter) {
 	if m.full != nil {
 		m.rebuild()
 		m.clampCursor()
+	}
+}
+
+// SetSignalSender replaces the signal sender (for tests to avoid killing real
+// processes).
+func (m *Model) SetSignalSender(s SignalSender) {
+	if s != nil {
+		m.sender = s
 	}
 }
 

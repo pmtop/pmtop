@@ -15,7 +15,7 @@
 | M1 | 核心采集层（procfs/inode/process/cgroup/docker） | ✅ 完成 | 单测覆盖 91.4%/86.3%；VM 对 `ss` 计数一致；真实 Docker 容器检测 ID 匹配 `docker ps` |
 | M2 | TUI 外壳 | ✅ 完成 | 单测 83.5%；VM 真实 /proc 单帧渲染通过（顶栏/8列表格/状态符号/底栏；root/user 徽标；PID 解析） |
 | M3 | 过滤系统 | ✅ 完成 | 单测 app 81.9% / filter 89.8%；VM 真实 /proc 过滤冒烟通过（`sshd` 文本过滤仅显示 sshd socket，过滤栏显示摘要） |
-| M4 | 进程与容器 | 待开始 | |
+| M4 | 进程与容器 | ✅ 完成 | 单测 app 81.5%/process 85.4%/collector 82.7%；VM 端到端：host-net 容器 nginx:8099 → TUI 显示 PID+进程+容器名 `pmtoptest`（Docker API 解析），详情/信号对话框单测通过 |
 | M5 | 特权与配置 | 待开始 | |
 | M6 | CLI 模式 | 待开始 | |
 | M7 | 手册与补全 | 待开始 | |
@@ -68,6 +68,19 @@
 - [x] 单测：filter 89.8% / app 81.9%
 - [x] VM 真实 /proc 过滤冒烟通过
 
+### M4 进程与容器
+- [x] `internal/collector/docker.go`：Docker Engine API 客户端（纯 HTTP over Unix socket，无 CGO/无 Docker SDK）+ ContainerInfo/PortMapping + ParseContainersJSON
+- [x] `Collector.WithContainerResolver`：富化容器名/image/status（FR-05-02/03）
+- [x] `internal/process/signal.go`：信号定义/解析/校验（FR-06-02，SIGTERM 默认）
+- [x] `internal/process/signal_{linux,other}.go`：syscall.Kill 发送（build tag 分离）
+- [x] `internal/process/pkg_owner.go`：dpkg -S / rpm -qf 包归属（FR-04-05）
+- [x] TUI：`Enter` 进程详情侧栏（PID/PPID/cmdline/exe/cwd/start/mem/包/容器/cgroup FR-04-02）
+- [x] TUI：`K` 信号选择对话框 + 确认 + 反馈（FR-06-01..04）
+- [x] `ui/panel.go`：Box/Dialog 带边框面板
+- [x] 单测：app 81.5% / process 85.4% / collector 82.7%
+- [x] VM 端到端：host-net 容器 nginx:8099 → TUI 行显示 `nginx root pmtoptest`（Docker API 容器名解析）
+- [ ] 容器详情视图（FR-05-04，P2，归入后续）
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -81,3 +94,5 @@
 | 2026-06-25 | M2 真实 /proc：TUI 单帧渲染（顶栏/表格/状态符号/底栏，root 徽标+PID） | 通过 |
 | 2026-06-25 | M3 单测：`go test -race -cover ./internal/filter/... ./internal/app/...` | 通过（89.8% / 81.9%） |
 | 2026-06-25 | M3 真实 /proc：文本过滤 `sshd` 仅显示 sshd socket，过滤栏摘要正确 | 通过 |
+| 2026-06-25 | M4 单测：`go test -race -cover ./...`（app 81.5%/process 85.4%/collector 82.7%） | 通过 |
+| 2026-06-25 | M4 端到端：host-net 容器 nginx:8099 → TUI 显示 PID+nginx+容器名 pmtoptest（Docker API） | 通过 |

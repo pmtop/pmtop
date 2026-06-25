@@ -42,7 +42,10 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 	if !platform.IsLinux() {
 		return fmt.Errorf("pmtop TUI requires Linux /proc")
 	}
-	src := collector.New(collector.NewOSFS(), collector.DefaultProcRoot)
+	src := collector.New(
+		collector.NewOSFS(), collector.DefaultProcRoot,
+		collector.WithContainerResolver(collector.NewDockerResolver("/var/run/docker.sock")),
+	)
 	root := platform.CurrentUID() == 0
 	m := app.New(src, version.Short(), root, 2*time.Second)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

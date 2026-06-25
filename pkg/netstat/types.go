@@ -189,11 +189,13 @@ type SocketInfo struct {
 	Path     string
 
 	// --- enrichment (from /proc/<pid>) ---
-	PID          int
-	ProcessName  string
-	User         string
-	Runtime      string // docker, containerd, podman, crio, ""
-	ContainerID  string
+	PID           int
+	ProcessName   string
+	User          string
+	Runtime       string // docker, containerd, podman, crio, ""
+	ContainerID   string
 	ContainerName string
-	NetNS         string
+	ContainerImage string
+	ContainerStatus string
+	NetNS          string
 }

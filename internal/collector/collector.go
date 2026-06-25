@@ -15,6 +15,7 @@ type Collector struct {
 	procRoot  string
 	restricted bool
 	ownerUID  uint32
+	resolver  ContainerResolver
 
 	// per-Collect caches
 	inodeMap    map[uint64]int
@@ -36,11 +37,25 @@ func WithRestricted(ownerUID uint32) Option {
 	}
 }
 
+// WithContainerResolver attaches a container resolver (e.g. DockerResolver)
+// used to fill container name/image/status during enrichment (FR-05-02/03).
+func WithContainerResolver(r ContainerResolver) Option {
+	return func(c *Collector) {
+		if r == nil {
+			r = noResolver{}
+		}
+		c.resolver = r
+	}
+}
+
 // New returns a Collector backed by fs reading procRoot (typically /proc).
 func New(fs FS, procRoot string, opts ...Option) *Collector {
-	c := &Collector{fs: fs, procRoot: procRoot}
+	c := &Collector{fs: fs, procRoot: procRoot, resolver: noResolver{}}
 	for _, o := range opts {
 		o(c)
+	}
+	if c.resolver == nil {
+		c.resolver = noResolver{}
 	}
 	return c
 }
@@ -134,6 +149,13 @@ func (c *Collector) enrich(s *netstat.SocketInfo) {
 	if cg := c.cgroup(pid); cg != nil {
 		s.Runtime = cg.Runtime
 		s.ContainerID = cg.ContainerID
+		if cg.ContainerID != "" && c.resolver != nil {
+			if ci, ok := c.resolver.Resolve(cg.ContainerID); ok {
+				s.ContainerName = ci.Name
+				s.ContainerImage = ci.Image
+				s.ContainerStatus = ci.Status
+			}
+		}
 	}
 }
 

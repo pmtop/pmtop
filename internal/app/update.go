@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pmtop/pmtop/internal/filter"
+	"github.com/pmtop/pmtop/internal/process"
 	"github.com/pmtop/pmtop/internal/ui"
 )
 
@@ -46,6 +47,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSearch(msg)
 		case modeFilter:
 			return m.updateFilterForm(msg)
+		case modeDetail:
+			return m.updateDetail(msg)
+		case modeSignal:
+			return m.updateSignal(msg)
 		default:
 			return m.updateTable(msg)
 		}
@@ -133,8 +138,93 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tbl.GotoBottom()
 		return m, nil
 
-	case keyMatches(msg, m.keys.Enter, m.keys.Kill, m.keys.Export, m.keys.Help):
+	case keyMatches(msg, m.keys.Enter):
+		m.openDetail()
+		return m, nil
+	case keyMatches(msg, m.keys.Kill):
+		m.openSignal()
+		return m, nil
+	case keyMatches(msg, m.keys.Export, m.keys.Help):
 		m.setStatus("not available yet", time.Second)
+		return m, nil
+	}
+	return m, nil
+}
+
+// updateDetail handles the process detail side panel: Esc closes it.
+func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape, tea.KeyEnter:
+		m.mode = modeTable
+		m.detail = nil
+		return m, nil
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	}
+	// 'k' inside detail could be reused to send a signal (FR-04-02 hints).
+	if keyMatches(msg, m.keys.Kill) && m.detail != nil && m.detail.pid > 0 {
+		m.signal = &SignalState{pid: m.detail.pid, name: m.detail.proc.Name, sel: defaultSignalIndex()}
+		m.mode = modeSignal
+		m.detail = nil
+		return m, nil
+	}
+	return m, nil
+}
+
+// updateSignal handles the signal-selection dialog and its confirmation step
+// (FR-06-01..04). Up/Down choose, Enter confirms (with a confirmation dialog),
+// Esc cancels.
+func (m Model) updateSignal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.signal == nil {
+		m.mode = modeTable
+		return m, nil
+	}
+	switch msg.Type {
+	case tea.KeyEscape:
+		if m.signal.confirm {
+			m.signal.confirm = false // back to selection
+			m.signal.result = ""
+		} else {
+			m.mode = modeTable
+			m.signal = nil
+		}
+		return m, nil
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	case tea.KeyUp, tea.KeyDown, tea.KeyRunes:
+		if keyMatches(msg, m.keys.Up) && !m.signal.confirm {
+			if m.signal.sel > 0 {
+				m.signal.sel--
+			}
+			return m, nil
+		}
+		if keyMatches(msg, m.keys.Down) && !m.signal.confirm {
+			if m.signal.sel < len(process.Signals)-1 {
+				m.signal.sel++
+			}
+			return m, nil
+		}
+	}
+
+	if m.signal.confirm {
+		// Confirmation step: Enter sends, Esc (handled above) cancels.
+		if msg.Type == tea.KeyEnter {
+			m.sendCurrentSignal()
+			res := m.signal.result
+			m.setStatus(res, 3*time.Second)
+			m.mode = modeTable
+			m.signal = nil
+			// Trigger a refresh so the table reflects the signal effect.
+			return m, refreshCmd()
+		}
+		return m, nil
+	}
+
+	// Selection step: Enter opens the confirmation dialog.
+	if msg.Type == tea.KeyEnter {
+		m.signal.confirm = true
 		return m, nil
 	}
 	return m, nil

@@ -27,6 +27,10 @@ func (m Model) View() string {
 		return top + "\n" + body + "\n" + searchLine
 	case modeFilter:
 		return top + "\n" + m.filterFormView(width) + "\n" + m.filterFormHints(width)
+	case modeDetail:
+		return top + "\n" + m.detailView(width) + "\n" + m.style.HintBar("[Esc] close  [K] signal", width)
+	case modeSignal:
+		return top + "\n" + m.signalView(width) + "\n" + m.style.HintBar("[↑/↓] choose  [Enter] confirm  [Esc] cancel", width)
 	}
 
 	body := m.tbl.View()

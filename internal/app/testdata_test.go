@@ -1,6 +1,8 @@
 package app
 
 import (
+	"github.com/pmtop/pmtop/internal/collector"
+	"github.com/pmtop/pmtop/internal/process"
 	"github.com/pmtop/pmtop/pkg/netstat"
 )
 
@@ -9,6 +11,10 @@ type fakeSource struct {
 	socks []netstat.SocketInfo
 	err   error
 	calls int
+	// optional detail overrides
+	proc   map[int]collector.ProcessInfo
+	procErr error
+	cg     map[int]collector.CgroupInfo
 }
 
 func (f *fakeSource) Collect() ([]netstat.SocketInfo, error) {
@@ -16,10 +22,47 @@ func (f *fakeSource) Collect() ([]netstat.SocketInfo, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	// Return a copy so sorts don't mutate the caller's fixture.
 	out := make([]netstat.SocketInfo, len(f.socks))
 	copy(out, f.socks)
 	return out, nil
+}
+
+// ProcessDetail implements DetailProvider for tests.
+func (f *fakeSource) ProcessDetail(pid int) (collector.ProcessInfo, error) {
+	if f.procErr != nil {
+		return collector.ProcessInfo{}, f.procErr
+	}
+	if pi, ok := f.proc[pid]; ok {
+		return pi, nil
+	}
+	return collector.ProcessInfo{PID: pid, Name: "proc-" + itoa(pid)}, nil
+}
+
+// CgroupDetail implements DetailProvider for tests.
+func (f *fakeSource) CgroupDetail(pid int) (collector.CgroupInfo, error) {
+	if cg, ok := f.cg[pid]; ok {
+		return cg, nil
+	}
+	return collector.CgroupInfo{Version: 2}, nil
+}
+
+// fakeSender records signals without sending them.
+type fakeSender struct {
+	sent   []sentSignal
+	fail   error
+}
+
+type sentSignal struct {
+	pid int
+	sig process.Signal
+}
+
+func (s *fakeSender) Send(pid int, sig process.Signal) error {
+	if s.fail != nil {
+		return s.fail
+	}
+	s.sent = append(s.sent, sentSignal{pid: pid, sig: sig})
+	return nil
 }
 
 // sampleSockets returns a small, deterministic set of sockets for tests.

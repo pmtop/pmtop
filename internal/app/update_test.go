@@ -128,8 +128,8 @@ func TestUpdate_WindowSize(t *testing.T) {
 func TestUpdate_NotAvailableHint(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.refresh()
-	// Enter is reserved for the detail panel (M4); shows a hint for now.
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	// Export is reserved (M5); shows a hint for now.
+	mm, _ := m.Update(keyMsg('e'))
 	assert.Contains(t, mm.(Model).statusMsg, "not available")
 }
 
