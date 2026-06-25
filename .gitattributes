@@ -1,0 +1,19 @@
+# Normalize line endings: enforce LF for source/config, let gitattributes handle it
+* text=auto eol=lf
+
+# Go / scripts always LF
+*.go       text eol=lf
+*.mod      text eol=lf
+*.sum      text eol=lf
+*.sh       text eol=lf
+Makefile   text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+*.toml     text eol=lf
+*.md       text eol=lf
+LICENSE    text eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.pdf binary

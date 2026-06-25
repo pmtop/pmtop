@@ -1,0 +1,35 @@
+# build artifacts
+build/
+dist/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# generated
+man/*
+!man/.gitkeep
+completions/bash/*
+!completions/bash/.gitkeep
+completions/zsh/*
+!completions/zsh/.gitkeep
+completions/fish/*
+!completions/fish/.gitkeep
+completions/powershell/*
+!completions/powershell/.gitkeep
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# local env / secrets
+.env
+*.pem
+*.key
+
+# local-only dev files (credentials, ssh info)
+ssh.md
+sshd.md

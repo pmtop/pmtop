@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go mod download
+      - run: go test -race -coverprofile=coverage.out ./...
+      - name: Enforce coverage threshold
+        run: |
+          go tool cover -func=coverage.out
+          # Fail if total coverage < 80% on core packages
+          COV=$(go tool cover -func=coverage.out | grep total: | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COV}%"
+      - uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+
+  build-all:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: make build-all
+      - name: Verify binaries exist
+        run: |
+          test -f build/pmtop-linux-amd64
+          test -f build/pmtop-linux-arm64
+          file build/pmtop-linux-amd64
+          file build/pmtop-linux-arm64

@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Generate man pages and completions
+        run: |
+          make man
+          make completions
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+  test-deb:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install latest .deb
+        run: |
+          apt-get update -y
+          apt-get install -y curl ca-certificates
+          # Download the deb asset published by the release
+          TAG=${GITHUB_REF#refs/tags/}
+          curl -fsSL -o /tmp/pmtop.deb "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/pmtop_${TAG#v}_linux_amd64.deb" || true
+          if [ -f /tmp/pmtop.deb ]; then apt-get install -y /tmp/pmtop.deb; pmtop version; fi
+      - run: pmtop list --json 2>/dev/null | head -n 5 || pmtop version
+
+  test-rpm:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    container: rockylinux:9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install latest .rpm
+        run: |
+          dnf install -y curl ca-certificates
+          TAG=${GITHUB_REF#refs/tags/}
+          curl -fsSL -o /tmp/pmtop.rpm "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/pmtop_${TAG#v}_linux_amd64.rpm" || true
+          if [ -f /tmp/pmtop.rpm ]; then dnf install -y /tmp/pmtop.rpm; pmtop version; fi
+      - run: pmtop list --json 2>/dev/null | head -n 5 || pmtop version
