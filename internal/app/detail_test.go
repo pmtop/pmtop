@@ -263,7 +263,7 @@ func TestUpdate_ExportWritesFile(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { os.Chdir(cwd) })
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
 
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.RefreshNow()
