@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install latest .rpm
         run: |
-          dnf install -y curl ca-certificates
+          dnf install -y ca-certificates
           TAG=${GITHUB_REF#refs/tags/}
           curl -fsSL -o /tmp/pmtop.rpm "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/pmtop_${TAG#v}_linux_amd64.rpm" || true
           if [ -f /tmp/pmtop.rpm ]; then dnf install -y /tmp/pmtop.rpm; pmtop version; fi
