@@ -23,36 +23,36 @@ func (m Model) detailView(width int) string {
 	p := d.proc
 	_, _ = w(&sb, "PID:        ", p.PID)
 	_, _ = w(&sb, "PPID:       ", p.PPID)
-	w(&sb, "Name:       ", p.Name)
-	w(&sb, "User:       ", p.User, " (", p.UID, ")")
-	w(&sb, "Command:    ", p.Cmdline)
-	w(&sb, "Exe Path:   ", p.Exe)
-	w(&sb, "CWD:        ", p.CWD)
-	w(&sb, "Start:      ", p.StartTime)
-	w(&sb, "MEM:        ", humanBytes(p.VmRSS), "   CPU: -")
+	_, _ = w(&sb, "Name:       ", p.Name)
+	_, _ = w(&sb, "User:       ", p.User, " (", p.UID, ")")
+	_, _ = w(&sb, "Command:    ", p.Cmdline)
+	_, _ = w(&sb, "Exe Path:   ", p.Exe)
+	_, _ = w(&sb, "CWD:        ", p.CWD)
+	_, _ = w(&sb, "Start:      ", p.StartTime)
+	_, _ = w(&sb, "MEM:        ", humanBytes(p.VmRSS), "   CPU: -")
 	if d.pkgName != "" {
-		w(&sb, "Package:    ", d.pkgName, " (dpkg/rpm)")
+		_, _ = w(&sb, "Package:    ", d.pkgName, " (dpkg/rpm)")
 	} else if d.pkgErr != nil {
-		w(&sb, "Package:    -")
+		_, _ = w(&sb, "Package:    -")
 	}
 	// Container association.
 	s := m.currentContainerInfo()
 	if s.Runtime != "" {
-		w(&sb, "Container:  ", s.Runtime, " ", shortID(s.ContainerID))
+		_, _ = w(&sb, "Container:  ", s.Runtime, " ", shortID(s.ContainerID))
 		if s.ContainerName != "" {
-			w(&sb, "  Name: ", s.ContainerName)
+			_, _ = w(&sb, "  Name: ", s.ContainerName)
 		}
 		if s.ContainerImage != "" {
-			w(&sb, "  Image: ", s.ContainerImage)
+			_, _ = w(&sb, "  Image: ", s.ContainerImage)
 		}
 		if s.ContainerStatus != "" {
-			w(&sb, "  Status: ", s.ContainerStatus)
+			_, _ = w(&sb, "  Status: ", s.ContainerStatus)
 		}
 	} else {
-		w(&sb, "Container:  -")
+		_, _ = w(&sb, "Container:  -")
 	}
 	if len(d.cg.Lines) > 0 {
-		w(&sb, "Cgroup:     ", d.cg.Version, " ", d.cg.Lines[0].Path)
+		_, _ = w(&sb, "Cgroup:     ", d.cg.Version, " ", d.cg.Lines[0].Path)
 	}
 	return ui.Box("Process Detail (PID "+itoa(d.pid)+")", sb.String(), width)
 }
