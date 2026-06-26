@@ -61,7 +61,7 @@ See "pmtop help" and the man page pmtop(8) for full documentation.`,
 }
 
 func init() {
-	flags := rootCmd.Flags()
+	flags := rootCmd.PersistentFlags()
 	flags.BoolVar(&flagNoElevate, "no-elevate", false, "force current-user mode, no sudo banner (CI/automation)")
 	flags.StringVar(&flagInterval, "interval", "", "refresh interval (500ms,1s,2s,5s,manual)")
 	flags.StringVar(&flagSortColumn, "sort", "", "default sort column (proto,port,state,pid,process,local,remote,container)")
@@ -103,7 +103,7 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 	if !platform.IsLinux() {
 		return fmt.Errorf("pmtop TUI requires Linux /proc")
 	}
-	cfg, _ := loadCfg(cmd.Flags())
+	cfg, _ := loadCfg(cmd.PersistentFlags())
 
 	// Privilege model (FR-07): detect, show banner for non-root unless
 	// --no-elevate, and offer an opt-in sudo re-launch.

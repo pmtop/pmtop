@@ -20,7 +20,7 @@
 | M6 | CLI 模式 | ✅ 完成 | VM `list`(TSV/JSON/CSV+过滤)、`info`(text/JSON)、`kill`(SIGTERM 终止子进程 exit 143) 全部正常；buildListFilter 单测覆盖 |
 | M7 | 手册与补全 | ✅ 完成 | VM `pmtop man` 生成 11 个 man 页（pmtop.8 含 NAME/SYNOPSIS/DESCRIPTION/EXAMPLES）；bash/zsh/fish 补全生成正常 |
 | M8 | CI/CD 与打包 | ✅ 完成 | `make build-all` 交叉编译 amd64(11M)+arm64(9.9M) 静态 stripped ELF；goreleaser/ci/release YAML 语法校验通过；nfpm/AUR/homebrew 配置就绪 |
-| M9 | 发布准备 | 待开始 | |
+| M9 | 发布准备 | ✅ 完成 | docs/INSTALL.md（apt/dnf/AUR/brew/源码安装指南）；CONTRIBUTING.md（贡献指南）；VM 全量验证通过；root 标志改 PersistentFlags 修复子命令前用 --no-elevate |
 
 ## 详细日志
 
@@ -113,6 +113,21 @@
 - [x] `.github/workflows/release.yml`：tag→goreleaser→deb/rpm 冒烟测试
 - [ ] goreleaser `release --snapshot` 本地全流程（goreleaser 二进制下载超时，留待 CI）
 
+### M9 发布准备
+- [x] `docs/INSTALL.md`：apt/dnf/AUR/brew/源码/静态二进制安装指南（PRD 8.5）
+- [x] `CONTRIBUTING.md`：贡献指南（PR 流程、测试、项目结构）
+- [x] 修复 `--no-elevate` 子命令前识别：`rootCmd.Flags()` → `PersistentFlags()`
+- [x] VM 最终全量验证：
+  - [x] `go test -race -cover ./...` 全部通过（核心包 > 80%）
+  - [x] `make build-all` amd64 + arm64 交叉编译通过
+  - [x] `pmtop --no-elevate list` TSV 输出正确
+  - [x] `pmtop --no-elevate list --json --ports 22` 端口过滤 JSON 正确
+  - [x] `pmtop --no-elevate list --csv --ports 80,53` CSV + 多端口过滤正确
+  - [x] `pmtop --no-elevate info 1` 进程详情正确
+  - [x] `pmtop --no-elevate info 1 --json` JSON 进程信息正确
+  - [x] `pmtop man --output-dir` 生成 11 个 man 页
+  - [x] `pmtop completion bash/zsh/fish` 生成正确
+
 ## 验证记录
 
 | 日期 | 内容 | 结果 |
@@ -134,3 +149,6 @@
 | 2026-06-25 | M7 VM：`pmtop man` 生成 11 个 man 页、bash/zsh/fish 补全生成 | 通过 |
 | 2026-06-25 | M8 `make build-all`：amd64(11M)+arm64(9.9M) 静态 stripped ELF | 通过 |
 | 2026-06-25 | M8 goreleaser/ci/release YAML 语法校验 | 通过 |
+| 2026-06-26 | M9 `docs/INSTALL.md` + `CONTRIBUTING.md` 安装与贡献文档 | 通过 |
+| 2026-06-26 | M9 修复 `--no-elevate` 子命令前识别（`Flags()` → `PersistentFlags()`） | 通过 |
+| 2026-06-26 | M9 VM 全量验证：测试、构建、list/json/csv/TSV、info/kill、man、completion | 通过 |
