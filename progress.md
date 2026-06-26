@@ -152,3 +152,4 @@
 | 2026-06-26 | M9 `docs/INSTALL.md` + `CONTRIBUTING.md` 安装与贡献文档 | 通过 |
 | 2026-06-26 | M9 修复 `--no-elevate` 子命令前识别（`Flags()` → `PersistentFlags()`） | 通过 |
 | 2026-06-26 | M9 VM 全量验证：测试、构建、list/json/csv/TSV、info/kill、man、completion | 通过 |
+| 2026-06-26 | 推送到 `github.com/pmtop/pmtop` 并配置 CI/CD：gh auth、分支保护（status checks+admin enforce）、PR #1 lint fix merged、CI 全部通过 | 通过 |

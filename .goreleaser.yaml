@@ -86,59 +86,8 @@ nfpms:
       - src: README.md
         dst: /usr/share/doc/pmtop/README.md
 
-aurs:
-  - name: pmtop-bin
-    homepage: https://github.com/pmtop/pmtop
-    description: Interactive terminal UI for inspecting Linux ports, processes, and container associations.
-    license: MIT
-    maintainers:
-      - pmtop contributors
-    private_key: "{{ .Env.AUR_SSH_PRIVATE_KEY }}"
-    git_url: ssh://aur@aur.archlinux.org/pmtop-bin.git
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    package: |-
-      # bin
-      install -Dm755 "./pmtop" "{{ .PkgDir }}/usr/bin/pmtop"
-      # man
-      install -Dm644 "./man/pmtop.8" "{{ .PkgDir }}/usr/share/man/man8/pmtop.8"
-      # completions
-      install -Dm644 "./completions/bash/pmtop" "{{ .PkgDir }}/usr/share/bash-completion/completions/pmtop"
-      install -Dm644 "./completions/zsh/_pmtop" "{{ .PkgDir }}/usr/share/zsh/site-functions/_pmtop"
-      install -Dm644 "./completions/fish/pmtop.fish" "{{ .PkgDir }}/usr/share/fish/vendor_completions.d/pmtop.fish"
-      # license
-      install -Dm644 "./LICENSE" "{{ .PkgDir }}/usr/share/licenses/pmtop/LICENSE"
-    pkgbuild: |-
-      # Maintainer: pmtop contributors
-      pkgname=pmtop-bin
-      pkgver={{ .Version }}
-      pkgrel=1
-      pkgdesc="Interactive terminal UI for inspecting Linux ports, processes, and container associations."
-      arch=('x86_64' 'aarch64')
-      url="https://github.com/pmtop/pmtop"
-      license=('MIT')
-      provides=('pmtop')
-      conflicts=('pmtop')
-      source_x86_64=("${url}/releases/download/{{ .Tag }}/{{ .ArtifactName }}")
-      sha256sums_x86_64=('{{ .Sha256 }}')
-      source_aarch64=("${url}/releases/download/{{ .Tag }}/{{ .ArtifactName }}")
-      sha256sums_aarch64=('{{ .Sha256 }}')
-
-      package() {
-          cd "${srcdir}"
-          install -Dm755 pmtop "${pkgdir}/usr/bin/pmtop"
-      }
-
-brews:
-  - name: pmtop
-    homepage: https://github.com/pmtop/pmtop
-    description: Interactive terminal UI for inspecting Linux ports, processes, and container associations.
-    license: MIT
-    repository:
-      owner: pmtop
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+# aurs and brews require org-level secrets (AUR_SSH_PRIVATE_KEY,
+# HOMEBREW_TAP_GITHUB_TOKEN). Uncomment when those are available.
 
 release:
   github:
