@@ -145,7 +145,7 @@ func handleNonRoot(st elevate.State) error {
 	fmt.Fprintln(os.Stderr, elevate.BannerText())
 	fmt.Fprint(os.Stderr, "> ")
 	var key string
-	fmt.Scanln(&key)
+	_, _ = fmt.Scanln(&key)
 	if len(key) > 0 && (key[0] == 'S' || key[0] == 's') {
 		return elevate.Relaunch()
 	}

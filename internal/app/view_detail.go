@@ -18,11 +18,11 @@ func (m Model) detailView(width int) string {
 	w := fmt.Fprintln
 
 	if d.err != nil {
-		w(&sb, "error: ", d.err)
+		_, _ = w(&sb, "error: ", d.err)
 	}
 	p := d.proc
-	w(&sb, "PID:        ", p.PID)
-	w(&sb, "PPID:       ", p.PPID)
+	_, _ = w(&sb, "PID:        ", p.PID)
+	_, _ = w(&sb, "PPID:       ", p.PPID)
 	w(&sb, "Name:       ", p.Name)
 	w(&sb, "User:       ", p.User, " (", p.UID, ")")
 	w(&sb, "Command:    ", p.Cmdline)
