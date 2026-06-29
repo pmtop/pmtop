@@ -26,32 +26,17 @@ func newDetailSource() *fakeSource {
 	return src
 }
 
-func TestUpdate_EnterOpensDetail(t *testing.T) {
+// Detail panel is always visible — verify it shows after refresh.
+func TestDetailPanel_AutoUpdate(t *testing.T) {
 	src := newDetailSource()
 	m := New(src, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 30)
 	m.RefreshNow()
 	m.tbl.SetCursor(0) // sshd (PID 100)
-
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
-	require.Equal(t, modeDetail, m.Mode())
+	m.updateDetailPanel()
 	require.NotNil(t, m.detail)
 	assert.Equal(t, 100, m.detail.pid)
 	assert.Equal(t, "sshd", m.detail.proc.Name)
-}
-
-func TestUpdate_DetailEscCloses(t *testing.T) {
-	src := newDetailSource()
-	m := New(src, "1.0.0", false, 2*time.Second)
-	m.RefreshNow()
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
-	require.Equal(t, modeDetail, m.Mode())
-
-	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
-	m = mm.(Model)
-	assert.Equal(t, modeTable, m.Mode())
-	assert.Nil(t, m.detail)
 }
 
 func TestView_DetailContainsFields(t *testing.T) {
@@ -59,8 +44,8 @@ func TestView_DetailContainsFields(t *testing.T) {
 	m := New(src, "1.0.0", false, 2*time.Second)
 	m.Resize(120, 30)
 	m.RefreshNow()
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
+	m.tbl.SetCursor(0)
+	m.updateDetailPanel()
 	v := m.View()
 	assert.Contains(t, v, "Process Detail")
 	assert.Contains(t, v, "sshd")
@@ -68,47 +53,48 @@ func TestView_DetailContainsFields(t *testing.T) {
 	assert.Contains(t, v, "root")
 }
 
-func TestUpdate_EnterOnNoPID(t *testing.T) {
-	// unix socket with PID 0
+func TestDetailPanel_NoPID(t *testing.T) {
 	src := &fakeSource{socks: []netstat.SocketInfo{
 		{Protocol: netstat.ProtocolUnix, Path: "/tmp/sock", Inode: 5, State: netstat.StateUnconnected, PID: 0},
 	}}
 	m := New(src, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 30)
 	m.RefreshNow()
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
-	assert.Equal(t, modeTable, m.Mode(), "no detail for PID 0")
-	assert.Contains(t, m.statusMsg, "no process")
+	m.updateDetailPanel()
+	assert.Nil(t, m.detail, "no detail for ownerless socket")
+	v := m.View()
+	assert.Contains(t, v, "ownerless socket")
 }
 
-func TestUpdate_KillOpensSignal(t *testing.T) {
+// F9 opens signal panel.
+func TestUpdate_F9OpensSignal(t *testing.T) {
 	src := newDetailSource()
 	m := New(src, "1.0.0", false, 2*time.Second)
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
 
-	mm, _ := m.Update(keyMsg('K'))
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
 	m = mm.(Model)
 	require.Equal(t, modeSignal, m.Mode())
 	require.NotNil(t, m.signal)
 	assert.Equal(t, 100, m.signal.pid)
 	assert.Equal(t, "sshd", m.signal.name)
-	// SIGTERM is the default selection.
 	assert.Equal(t, "SIGTERM", process.Signals[m.signal.sel].Name)
 }
 
 func TestUpdate_SignalSelectionAndConfirm(t *testing.T) {
 	src := newDetailSource()
 	m := New(src, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 30)
 	sender := &fakeSender{}
 	m.SetSignalSender(sender)
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
 
-	// Open signal dialog.
-	mm, _ := m.Update(keyMsg('K'))
+	// Open signal dialog with F9.
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
 	m = mm.(Model)
-	// Move down once to SIGKILL (index 3; default is SIGTERM at index 2).
+	// Move down once to SIGKILL.
 	mm, _ = m.Update(keyMsg('j'))
 	m = mm.(Model)
 	assert.Equal(t, "SIGKILL", process.Signals[m.signal.sel].Name)
@@ -119,7 +105,7 @@ func TestUpdate_SignalSelectionAndConfirm(t *testing.T) {
 	assert.True(t, m.signal.confirm, "Enter opens confirmation")
 	assert.Contains(t, m.View(), "Confirm")
 
-	// Esc -> back to selection (not exit).
+	// Esc -> back to selection.
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = mm.(Model)
 	assert.False(t, m.signal.confirm)
@@ -142,7 +128,7 @@ func TestUpdate_SignalEscCancels(t *testing.T) {
 	m.SetSignalSender(&fakeSender{})
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
-	mm, _ := m.Update(keyMsg('K'))
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
 	m = mm.(Model)
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m = mm.(Model)
@@ -156,11 +142,11 @@ func TestUpdate_SignalSendFailure(t *testing.T) {
 	m.SetSignalSender(&fakeSender{fail: errPerm})
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
-	mm, _ := m.Update(keyMsg('K'))
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
 	m = mm.(Model)
-	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // confirm
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
-	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // send
+	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mm.(Model)
 	assert.Contains(t, m.statusMsg, "failed")
 }
@@ -171,13 +157,12 @@ func TestUpdate_KillOnNoPID(t *testing.T) {
 	}}
 	m := New(src, "1.0.0", false, 2*time.Second)
 	m.RefreshNow()
-	mm, _ := m.Update(keyMsg('K'))
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
 	m = mm.(Model)
 	assert.Equal(t, modeTable, m.Mode())
 	assert.Contains(t, m.statusMsg, "no process")
 }
 
-// errPerm is a stand-in permission error for the fake sender.
 var errPerm = permErr("permission denied")
 
 type permErr string
@@ -185,7 +170,7 @@ type permErr string
 func (e permErr) Error() string { return string(e) }
 
 func TestHumanBytes(t *testing.T) {
-	assert.Equal(t, "512 B", humanBytes(512))
+	assert.Equal(t, "512B", humanBytes(512))
 	assert.Contains(t, humanBytes(2048), "KB")
 	assert.Contains(t, humanBytes(10*1024*1024), "MB")
 }
@@ -196,54 +181,13 @@ func TestItoa(t *testing.T) {
 	assert.Equal(t, "-7", itoa(-7))
 }
 
-func TestUpdate_DetailKillOpensSignal(t *testing.T) {
-	src := newDetailSource()
-	m := New(src, "1.0.0", false, 2*time.Second)
-	m.SetSignalSender(&fakeSender{})
-	m.RefreshNow()
-	m.tbl.SetCursor(0)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // open detail
-	m = mm.(Model)
-	require.Equal(t, modeDetail, m.Mode())
-
-	mm, _ = m.Update(keyMsg('K')) // signal from detail
-	m = mm.(Model)
-	assert.Equal(t, modeSignal, m.Mode())
-	assert.Equal(t, 100, m.signal.pid)
-}
-
-func TestUpdate_DetailNoOpKey(t *testing.T) {
-	src := newDetailSource()
-	m := New(src, "1.0.0", false, 2*time.Second)
-	m.RefreshNow()
-	m.tbl.SetCursor(0)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
-	mm, _ = m.Update(keyMsg('x')) // unrelated key
-	m = mm.(Model)
-	assert.Equal(t, modeDetail, m.Mode(), "unrelated key keeps detail open")
-}
-
-func TestUpdate_DetailError(t *testing.T) {
-	src := newDetailSource()
-	src.procErr = errPerm
-	m := New(src, "1.0.0", false, 2*time.Second)
-	m.Resize(120, 30)
-	m.RefreshNow()
-	m.tbl.SetCursor(0)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
-	assert.Equal(t, modeDetail, m.Mode())
-	assert.Contains(t, m.View(), "error")
-}
-
 func TestUpdate_SignalUp(t *testing.T) {
 	src := newDetailSource()
 	m := New(src, "1.0.0", false, 2*time.Second)
 	m.SetSignalSender(&fakeSender{})
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
-	mm, _ := m.Update(keyMsg('K'))
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
 	m = mm.(Model)
 	start := m.signal.sel
 	mm, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -251,7 +195,7 @@ func TestUpdate_SignalUp(t *testing.T) {
 	assert.Equal(t, start-1, m.signal.sel, "Up moves selection up")
 }
 
-func TestUpdate_HelpFromDetail(t *testing.T) {
+func TestUpdate_HelpFromTable(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.RefreshNow()
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF1})
@@ -260,7 +204,6 @@ func TestUpdate_HelpFromDetail(t *testing.T) {
 }
 
 func TestUpdate_ExportWritesFile(t *testing.T) {
-	// Run in a temp working dir so the export file is isolated and cleaned up.
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	require.NoError(t, os.Chdir(dir))

@@ -13,23 +13,23 @@ import (
 )
 
 func TestBuildColumns_FitsWidth(t *testing.T) {
-	cols := BuildColumns(120)
+	cols := BuildColumns(80) // left pane width
 	require.Len(t, cols, NumColumns)
 	total := 0
 	for _, c := range cols {
 		total += c.Width
 	}
-	assert.LessOrEqual(t, total+(NumColumns-1)*3, 120)
+	assert.LessOrEqual(t, total+(NumColumns-1)*3, 80)
 }
 
 func TestBuildColumns_Narrow(t *testing.T) {
-	cols := BuildColumns(80)
+	cols := BuildColumns(40)
 	total := 0
 	for _, c := range cols {
 		total += c.Width
 		assert.GreaterOrEqual(t, c.Width, 4, "columns keep a minimum width")
 	}
-	assert.LessOrEqual(t, total+(NumColumns-1)*3, 80)
+	assert.LessOrEqual(t, total+(NumColumns-1)*3, 40)
 }
 
 func TestRowsFromSockets(t *testing.T) {
@@ -39,18 +39,17 @@ func TestRowsFromSockets(t *testing.T) {
 	}
 	rows := RowsFromSockets(socks, NewStyle(false, false), RowOptions{})
 	require.Len(t, rows, 2)
+	// Row 0: sequence number, proto, local, remote, state
+	assert.Equal(t, "1", rows[0][ColSeq])
 	assert.Contains(t, rows[0][ColProto], "TCP")
-	assert.Contains(t, rows[0][ColProto], "▶") // LISTEN symbol
+	assert.Contains(t, rows[0][ColProto], "▶")
 	assert.Equal(t, "0.0.0.0:22", rows[0][ColLocal])
 	assert.Equal(t, "LISTEN", rows[0][ColState])
-	assert.Equal(t, "100", rows[0][ColPID])
-	assert.Equal(t, "sshd", rows[0][ColProcess])
-	assert.Equal(t, "root", rows[0][ColUser])
 
+	// Row 1: unix socket
+	assert.Equal(t, "2", rows[1][ColSeq])
 	assert.Contains(t, rows[1][ColProto], "UNIX")
 	assert.Equal(t, "/tmp/sock", rows[1][ColLocal])
-	assert.Equal(t, "-", rows[1][ColPID])
-	assert.Equal(t, "-", rows[1][ColProcess])
 }
 
 func TestRowsFromSockets_ShowService(t *testing.T) {
@@ -65,14 +64,6 @@ func TestRowsFromSockets_ShowService(t *testing.T) {
 	rowsPort := RowsFromSockets(socks, NewStyle(false, false), RowOptions{})
 	assert.Contains(t, rowsPort[0][ColLocal], "22")
 	assert.Contains(t, rowsPort[1][ColRemote], "443")
-}
-
-func TestRowsFromSockets_ContainerShortID(t *testing.T) {
-	socks := []netstat.SocketInfo{
-		{Protocol: netstat.ProtocolTCP, LocalPort: 80, State: netstat.StateListen, PID: 1, ContainerID: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
-	}
-	rows := RowsFromSockets(socks, NewStyle(false, false), RowOptions{})
-	assert.Equal(t, "0123456789ab", rows[0][ColContainer], "container id truncated to 12")
 }
 
 func TestRemoteCell(t *testing.T) {
@@ -95,8 +86,6 @@ func TestNoColor(t *testing.T) {
 }
 
 func TestNewStyle_NoColor(t *testing.T) {
-	os.Setenv("NO_COLOR", "1")
-	t.Cleanup(func() { os.Unsetenv("NO_COLOR") })
 	s := NewStyle(true, false)
 	assert.True(t, s.noColor)
 	row := RowsFromSockets([]netstat.SocketInfo{
@@ -106,11 +95,9 @@ func TestNewStyle_NoColor(t *testing.T) {
 }
 
 func TestNewStyle_Colorblind(t *testing.T) {
-	os.Unsetenv("NO_COLOR")
 	s := NewStyle(false, true)
 	assert.True(t, s.Colorblind())
 	assert.False(t, s.noColor)
-	// Colorblind palette should be populated.
 	assert.NotNil(t, s.stateStyles)
 }
 
@@ -125,7 +112,6 @@ func TestStatusBar(t *testing.T) {
 func TestStatusBar_Truncation(t *testing.T) {
 	s := NewStyle(false, false)
 	out := s.StatusBar("1.0.0", true, false, "2s", strings.Repeat("X", 200), 80)
-	// Should not panic and should fit within 80 chars (visible width).
 	assert.LessOrEqual(t, lipgloss.Width(out), 80)
 }
 
@@ -142,13 +128,14 @@ func TestSummaryBar(t *testing.T) {
 
 func TestColumnTitleForSort(t *testing.T) {
 	assert.Equal(t, "Proto", ColumnTitleForSort("Proto", false, true))
-	assert.Equal(t, "Proto ▲", ColumnTitleForSort("Proto", true, true))
-	assert.Equal(t, "Proto ▼", ColumnTitleForSort("Proto", true, false))
+	assert.Equal(t, "Proto▲", ColumnTitleForSort("Proto", true, true))
+	assert.Equal(t, "Proto▼", ColumnTitleForSort("Proto", true, false))
 }
 
 func TestSortColumnIndex(t *testing.T) {
 	assert.Equal(t, ColProto, SortColumnIndex(0))
 	assert.Equal(t, ColLocal, SortColumnIndex(1))
-	assert.Equal(t, ColPID, SortColumnIndex(5))
+	assert.Equal(t, ColState, SortColumnIndex(4))
+	assert.Equal(t, -1, SortColumnIndex(5))  // SortPID not in table
 	assert.Equal(t, -1, SortColumnIndex(99))
 }

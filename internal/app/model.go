@@ -15,8 +15,10 @@ import (
 	"github.com/pmtop/pmtop/pkg/netstat"
 )
 
+// RightPanelWidth is the fixed width of the right detail+signal panel.
+const RightPanelWidth = 40
+
 // DataSource abstracts socket collection so the TUI can be tested without /proc.
-// *collector.Collector satisfies this interface.
 type DataSource interface {
 	Collect() ([]netstat.SocketInfo, error)
 }
@@ -31,8 +33,7 @@ const (
 	modeTable  mode = iota // default: navigating the port table
 	modeSearch             // '/' free-text search input
 	modeFilter             // 'f' filter form
-	modeDetail             // 'Enter' process detail side panel
-	modeSignal             // 'K' signal selection dialog
+	modeSignal             // 'F9' signal selection in right-bottom panel
 	modeHelp               // 'F1' full-screen help overlay
 )
 
@@ -49,53 +50,49 @@ type Model struct {
 	interval time.Duration
 
 	paused   bool
-	manual   bool // refresh_interval="manual": no auto-tick
+	manual   bool
 	quitting bool
 
-	full  []netstat.SocketInfo // raw snapshot from the source
-	socks []netstat.SocketInfo // filtered + sorted (displayed)
+	full  []netstat.SocketInfo
+	socks []netstat.SocketInfo
 	filt  filter.Filter
 
-	tbl      table.Model
-	sortKey  SortKey
-	sortAsc  bool
+	tbl     table.Model
+	sortKey SortKey
+	sortAsc bool
 
 	mode         mode
 	searchInput  textinput.Model
 	filterInputs []textinput.Model
 	filterFocus  int
-	filtDraft    filter.Filter // saved filter to restore on cancel
+	filtDraft    filter.Filter
 
 	detail *DetailState
 	signal *SignalState
 	sender SignalSender
 	cfg    config.Config
 
-	// display toggles
-	showService bool // 'p' key: show service names instead of port numbers
-
-	// help overlay
-	help bool // 'F1' toggles full-screen help
+	showService bool
+	help        bool
 
 	width, height int
 
 	lastRefresh time.Time
 	statusMsg   string
 	statusExp   time.Time
-	statusPerm  bool // true = status message persists until cleared
+	statusPerm  bool
 	err         error
 }
 
-// New returns the initial Model. interval is the auto-refresh period
-// (default 2s per FR-02-01).
+// New returns the initial Model.
 func New(src DataSource, version string, root bool, interval time.Duration) Model {
 	style := ui.NewStyle(false, false)
 	tbl := table.New(
-		table.WithColumns(ui.BuildColumns(120)),
+		table.WithColumns(ui.BuildColumns(80)),
 		table.WithHeight(10),
 		table.WithStyles(table.Styles{
 			Header:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("7")),
-			Selected: lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236")),
+			Selected: lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("237")).Foreground(lipgloss.Color("15")),
 		}),
 	)
 	m := Model{
@@ -115,7 +112,6 @@ func New(src DataSource, version string, root bool, interval time.Duration) Mode
 	return m
 }
 
-// newSearchInput builds the '/' free-text search field.
 func newSearchInput() textinput.Model {
 	ti := textinput.New()
 	ti.Placeholder = "search process / PID / user / container"
@@ -124,7 +120,6 @@ func newSearchInput() textinput.Model {
 	return ti
 }
 
-// newFilterInputs builds the filter form fields (one textinput per column).
 func newFilterInputs() []textinput.Model {
 	inputs := make([]textinput.Model, len(filterFields))
 	for i := range inputs {
@@ -144,22 +139,18 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(refreshCmd(), tickCmd(m.interval))
 }
 
-// refreshCmd returns a command that triggers an immediate data refresh.
 func refreshCmd() tea.Cmd {
 	return func() tea.Msg { return refreshMsg{} }
 }
 
-// refreshMsg requests a data snapshot.
 type refreshMsg struct{}
 
-// tickCmd schedules the next tick after duration d.
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 // refresh performs a data snapshot, applies the filter, re-sorts, rebuilds
-// table rows, and preserves the cursor on the same socket when possible
-// (FR-02-01). In detail mode, the detail panel data is also updated.
+// table rows, preserves the cursor, and updates the detail panel.
 func (m *Model) refresh() {
 	prev := m.socks
 	prevCursor := m.tbl.Cursor()
@@ -169,13 +160,9 @@ func (m *Model) refresh() {
 	m.err = err
 	if err == nil {
 		m.rebuild()
-		// Don't move cursor while detail panel is open (prevents container info mismatch).
-		if m.mode != modeDetail {
+		if m.mode != modeSignal {
 			m.preserveCursor(prev, prevCursor)
-		}
-		// Update detail panel data if open (for CPU% refresh).
-		if m.mode == modeDetail && m.detail != nil {
-			m.updateDetailData()
+			m.updateDetailPanel()
 		}
 	}
 	m.lastRefresh = time.Now()
@@ -190,8 +177,8 @@ func (m *Model) rebuild() {
 	}))
 }
 
-// applySort re-sorts the current (filtered) snapshot, rebuilds rows, and
-// updates the column sort indicators.
+// applySort re-sorts the current snapshot, rebuilds rows, and updates sort
+// indicators.
 func (m *Model) applySort() {
 	if len(m.socks) > 0 {
 		SortSockets(m.socks, m.sortKey, m.sortAsc)
@@ -199,6 +186,7 @@ func (m *Model) applySort() {
 			ShowService: m.showService,
 		}))
 		m.clampCursor()
+		m.updateDetailPanel()
 	}
 	m.applySortIndicator()
 }
@@ -214,9 +202,10 @@ func (m *Model) applySortIndicator() {
 	m.tbl.SetColumns(cols)
 }
 
-// baseColumnTitle returns the plain title for column index i.
 func baseColumnTitle(i int) string {
 	switch i {
+	case ui.ColSeq:
+		return "#"
 	case ui.ColProto:
 		return "Proto"
 	case ui.ColLocal:
@@ -225,21 +214,11 @@ func baseColumnTitle(i int) string {
 		return "Remote"
 	case ui.ColState:
 		return "State"
-	case ui.ColPID:
-		return "PID"
-	case ui.ColProcess:
-		return "Process"
-	case ui.ColUser:
-		return "User"
-	case ui.ColContainer:
-		return "Container"
 	default:
 		return ""
 	}
 }
 
-// preserveCursor keeps the selection on the same socket across a refresh by
-// matching inode, falling back to PID+endpoint, then to a clamped index.
 func (m *Model) preserveCursor(prev []netstat.SocketInfo, prevCursor int) {
 	if len(m.socks) == 0 {
 		m.tbl.SetCursor(0)
@@ -267,7 +246,6 @@ func (m *Model) preserveCursor(prev []netstat.SocketInfo, prevCursor int) {
 	m.clampCursor()
 }
 
-// clampCursor keeps the cursor within the row range.
 func (m *Model) clampCursor() {
 	if len(m.socks) == 0 {
 		return
@@ -282,15 +260,12 @@ func (m *Model) clampCursor() {
 	m.tbl.SetCursor(c)
 }
 
-// setStatus shows msg for dur (e.g. 3s for signal feedback per FR-06-04).
-// If dur is zero, the message persists until cleared (used for pause state).
 func (m *Model) setStatus(msg string, dur time.Duration) {
 	m.statusMsg = msg
 	m.statusPerm = dur == 0
 	m.statusExp = time.Now().Add(dur)
 }
 
-// currentSocket returns the selected socket, if any.
 func (m Model) currentSocket() (netstat.SocketInfo, bool) {
 	c := m.tbl.Cursor()
 	if c < 0 || c >= len(m.socks) {
@@ -299,51 +274,43 @@ func (m Model) currentSocket() (netstat.SocketInfo, bool) {
 	return m.socks[c], true
 }
 
-// Socks returns the current filtered snapshot (for testing/inspection).
+// Socks returns the current filtered snapshot.
 func (m Model) Socks() []netstat.SocketInfo { return m.socks }
 
-// Filter returns the active filter (for testing/inspection).
+// Filter returns the active filter.
 func (m Model) Filter() filter.Filter { return m.filt }
 
-// SetFilter replaces the active filter and rebuilds the view (for tests/CLI).
+// SetFilter replaces the active filter and rebuilds the view.
 func (m *Model) SetFilter(f filter.Filter) {
 	m.filt = f
 	if m.full != nil {
 		m.rebuild()
 		m.clampCursor()
+		m.updateDetailPanel()
 	}
 }
 
-// SetSignalSender replaces the signal sender (for tests to avoid killing real
-// processes).
+// SetSignalSender replaces the signal sender (for tests).
 func (m *Model) SetSignalSender(s SignalSender) {
 	if s != nil {
 		m.sender = s
 	}
 }
 
-// SetConfig applies runtime configuration (refresh interval, sort, colorblind,
-// no-color, etc.) after construction. Wired by cmd/pmtop from layered config
-// + flags.
+// SetConfig applies runtime configuration after construction.
 func (m *Model) SetConfig(cfg config.Config) {
 	m.cfg = cfg
-
-	// Refresh interval: "manual" means no auto-refresh.
 	if strings.ToLower(cfg.RefreshInterval) == "manual" {
 		m.manual = true
 	} else if d := cfg.Interval(); d > 0 {
 		m.interval = d
 	}
-
-	// Sort column and direction.
 	if cfg.SortColumn != "" {
 		if sk, ok := sortKeyFromConfig(cfg.SortColumn); ok {
 			m.sortKey = sk
 		}
 	}
 	m.sortAsc = cfg.SortAsc
-
-	// Rebuild style with color/no-color/colorblind settings.
 	m.style = ui.NewStyle(cfg.NoColor, cfg.ColorblindMode)
 	if cfg.NoColor {
 		m.tbl.SetStyles(table.Styles{
@@ -353,21 +320,17 @@ func (m *Model) SetConfig(cfg config.Config) {
 	} else {
 		m.tbl.SetStyles(table.Styles{
 			Header:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("7")),
-			Selected: lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236")),
+			Selected: lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("237")).Foreground(lipgloss.Color("15")),
 		})
 	}
-
-	// Apply sort indicator to current columns.
 	m.applySortIndicator()
-
-	// Rebuild rows with new style if data is already loaded.
 	if m.full != nil {
 		m.rebuild()
 		m.clampCursor()
+		m.updateDetailPanel()
 	}
 }
 
-// sortKeyFromConfig maps a config sort column name to a SortKey.
 func sortKeyFromConfig(s string) (SortKey, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "proto", "protocol":
@@ -391,30 +354,55 @@ func sortKeyFromConfig(s string) (SortKey, bool) {
 	}
 }
 
-// Err returns the last collection error, if any (for non-interactive use).
+// Err returns the last collection error.
 func (m Model) Err() error { return m.err }
 
-// Cursor returns the current cursor index (for testing).
+// Cursor returns the current cursor index.
 func (m Model) Cursor() int { return m.tbl.Cursor() }
 
-// Mode returns the current interaction mode (for testing).
+// Mode returns the current interaction mode.
 func (m Model) Mode() mode { return m.mode }
 
-// Resize sets the viewport size and rebuilds the table layout. Intended for
-// non-interactive rendering (smoke tests, snapshots).
-func (m *Model) Resize(width, height int) {
-	m.width = width
-	m.height = height
-	m.tbl.SetWidth(width)
-	h := height - 3 // top status (1) + summary (1) + bottom hints (1)
+// Detail returns the current detail state (for testing).
+func (m Model) Detail() *DetailState { return m.detail }
+
+// availableHeight returns the body height (excluding status, summary, bottom).
+func (m Model) availableHeight() int {
+	h := m.height
+	if h <= 0 {
+		h = 24
+	}
+	h = h - 3 // status(1) + summary(1) + bottom(1)
 	if h < 3 {
 		h = 3
 	}
-	m.tbl.SetHeight(h)
-	m.tbl.SetColumns(ui.BuildColumns(width))
+	return h
+}
+
+// leftPaneWidth returns the width available for the left table.
+func (m Model) leftPaneWidth() int {
+	w := m.width
+	if w <= 0 {
+		w = 120
+	}
+	w = w - RightPanelWidth
+	if w < 20 {
+		w = 20
+	}
+	return w
+}
+
+// Resize sets the viewport size and rebuilds the table layout.
+func (m *Model) Resize(width, height int) {
+	m.width = width
+	m.height = height
+	leftW := m.leftPaneWidth()
+	availH := m.availableHeight()
+	m.tbl.SetWidth(leftW)
+	m.tbl.SetHeight(availH)
+	m.tbl.SetColumns(ui.BuildColumns(leftW))
 	m.applySortIndicator()
 }
 
-// RefreshNow forces a data refresh without waiting for a tick. Intended for
-// non-interactive rendering and integration tests.
+// RefreshNow forces a data refresh.
 func (m *Model) RefreshNow() { m.refresh() }

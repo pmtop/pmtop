@@ -40,3 +40,5 @@ pmtop-src.tar.gz
 
 # local dev scratch programs (synced to VM for manual checks, not shipped)
 dev/
+
+screenshot/

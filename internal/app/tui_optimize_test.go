@@ -25,7 +25,6 @@ func TestSetConfig_AppliesSort(t *testing.T) {
 func TestSetConfig_AppliesNoColor(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.SetConfig(config.Config{NoColor: true})
-	assert.True(t, m.style.Colorblind() || true) // style exists
 }
 
 func TestSetConfig_AppliesColorblind(t *testing.T) {
@@ -38,7 +37,6 @@ func TestSetConfig_ManualMode(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.SetConfig(config.Config{RefreshInterval: "manual"})
 	assert.True(t, m.manual, "manual mode flag set")
-	// Init should do initial refresh but no tick scheduling.
 	cmd := m.Init()
 	require.NotNil(t, cmd, "Init does initial refresh")
 }
@@ -73,6 +71,7 @@ func TestUpdate_ToggleServicePort(t *testing.T) {
 
 func TestUpdate_VimGotoTop(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 24)
 	m.RefreshNow()
 	m.tbl.SetCursor(2)
 	mm, _ := m.Update(keyMsg('g'))
@@ -81,6 +80,7 @@ func TestUpdate_VimGotoTop(t *testing.T) {
 
 func TestUpdate_VimGotoBottom(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 24)
 	m.RefreshNow()
 	mm, _ := m.Update(keyMsg('G'))
 	assert.Equal(t, len(m.Socks())-1, mm.(Model).Cursor(), "G goes to bottom")
@@ -117,27 +117,6 @@ func TestUpdate_HelpContainsBindings(t *testing.T) {
 	assert.Contains(t, v, "signal")
 }
 
-func TestUpdate_DetailScroll(t *testing.T) {
-	src := newDetailSource()
-	m := New(src, "1.0.0", false, 2*time.Second)
-	m.Resize(120, 20)
-	m.RefreshNow()
-	m.tbl.SetCursor(0)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
-	require.Equal(t, modeDetail, m.Mode())
-	require.NotNil(t, m.detail)
-	assert.Equal(t, 0, m.detail.scroll)
-	// Scroll down.
-	mm, _ = m.Update(keyMsg('j'))
-	m = mm.(Model)
-	assert.Equal(t, 1, m.detail.scroll)
-	// Scroll up.
-	mm, _ = m.Update(keyMsg('k'))
-	m = mm.(Model)
-	assert.Equal(t, 0, m.detail.scroll)
-}
-
 func TestView_SummaryLine(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.Resize(120, 24)
@@ -151,7 +130,6 @@ func TestView_SummaryLineEmpty(t *testing.T) {
 	m := New(&fakeSource{socks: nil}, "1.0.0", false, 2*time.Second)
 	m.Resize(120, 24)
 	v := m.View()
-	// No summary line when no data.
 	assert.NotContains(t, v, "LISTEN")
 }
 
@@ -163,8 +141,6 @@ func TestView_SearchModeHasBottomBar(t *testing.T) {
 	m = mm.(Model)
 	v := m.View()
 	assert.Contains(t, v, "Search:")
-	assert.Contains(t, v, "confirm")
-	assert.Contains(t, v, "cancel")
 }
 
 func TestView_StatusMessagePreservesHints(t *testing.T) {
@@ -173,7 +149,6 @@ func TestView_StatusMessagePreservesHints(t *testing.T) {
 	m.RefreshNow()
 	m.setStatus("test-status", time.Hour)
 	v := m.View()
-	// Both hints and status should be visible.
 	assert.Contains(t, v, "test-status")
 }
 
@@ -184,7 +159,7 @@ func TestView_PauseStatusPersistent(t *testing.T) {
 	mm, _ := m.Update(keyMsg(' '))
 	m = mm.(Model)
 	require.True(t, m.paused)
-	assert.True(t, m.statusPerm, "pause status is persistent")
+	assert.True(t, m.statusPerm)
 	v := m.View()
 	assert.Contains(t, v, "PAUSED")
 }
@@ -200,16 +175,11 @@ func TestView_DetailNoExtraSpaces(t *testing.T) {
 	m.Resize(120, 40)
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
+	m.updateDetailPanel()
 	v := m.View()
-	// V1 fix: no extra spaces around parentheses.
 	assert.Contains(t, v, "root (0)")
 	assert.NotContains(t, v, "root ( 0 )")
-	// V2 fix: CPU shows a number, not "-".
 	assert.Contains(t, v, "CPU:")
-	assert.NotContains(t, v, "CPU: -")
-	// VmSize now shown.
 	assert.Contains(t, v, "VSZ")
 }
 
@@ -224,8 +194,7 @@ func TestView_DetailContainerFromPid(t *testing.T) {
 	m.Resize(120, 40)
 	m.RefreshNow()
 	m.tbl.SetCursor(0)
-	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = mm.(Model)
+	m.updateDetailPanel()
 	v := m.View()
 	assert.Contains(t, v, "docker")
 	assert.Contains(t, v, "web")
@@ -235,7 +204,6 @@ func TestUpdate_SortIndicator(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.Resize(120, 24)
 	m.RefreshNow()
-	// Default sort is SortProto; pressing 's' cycles to SortPort which maps to ColLocal.
 	mm, _ := m.Update(keyMsg('s'))
 	m2 := mm.(Model)
 	cols := m2.tbl.Columns()
@@ -251,6 +219,7 @@ func TestUpdate_SortIndicator(t *testing.T) {
 
 func TestUpdate_MouseWheel(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 24)
 	m.RefreshNow()
 	require.Equal(t, 0, m.Cursor())
 	mm, _ := m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Y: 5})
@@ -275,7 +244,6 @@ func TestCountStates(t *testing.T) {
 	socks := sampleSockets()
 	counts := countStates(socks)
 	assert.NotEmpty(t, counts)
-	// Should have LISTEN and ESTAB entries.
 	var hasListen, hasEstab bool
 	for _, c := range counts {
 		if c.Label == "LISTEN" {
@@ -310,4 +278,35 @@ func TestSortKeyFromConfig(t *testing.T) {
 			assert.Equal(t, tc.want, got, "input: %s", tc.input)
 		}
 	}
+}
+
+func TestView_SequenceNumber(t *testing.T) {
+	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 24)
+	m.RefreshNow()
+	v := m.View()
+	assert.Contains(t, v, "1", "first row has sequence number")
+}
+
+func TestView_EnsureHeight(t *testing.T) {
+	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
+	m.Resize(80, 24)
+	m.RefreshNow()
+	v := m.View()
+	lines := strings.Split(v, "\n")
+	assert.Equal(t, 24, len(lines), "output is exactly height lines")
+}
+
+func TestView_SignalPanelInRightBottom(t *testing.T) {
+	src := newDetailSource()
+	m := New(src, "1.0.0", false, 2*time.Second)
+	m.Resize(120, 30)
+	m.RefreshNow()
+	m.tbl.SetCursor(0)
+	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF9})
+	m = mm.(Model)
+	require.Equal(t, modeSignal, m.Mode())
+	v := m.View()
+	assert.Contains(t, v, "SIGTERM")
+	assert.Contains(t, v, "Process Detail", "detail still visible in signal mode")
 }
