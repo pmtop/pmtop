@@ -251,11 +251,12 @@ func TestUpdate_SignalUp(t *testing.T) {
 	assert.Equal(t, start-1, m.signal.sel, "Up moves selection up")
 }
 
-func TestUpdate_HelpNotAvailable(t *testing.T) {
+func TestUpdate_HelpFromDetail(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.RefreshNow()
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF1})
-	assert.Contains(t, mm.(Model).statusMsg, "not available")
+	m2 := mm.(Model)
+	assert.Equal(t, modeHelp, m2.Mode(), "F1 opens help overlay")
 }
 
 func TestUpdate_ExportWritesFile(t *testing.T) {

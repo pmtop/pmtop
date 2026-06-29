@@ -14,25 +14,26 @@ import (
 	"github.com/pmtop/pmtop/internal/ui"
 )
 
-// Update handles all messages: window resizing, refresh ticks, and key events.
-// Key handling depends on the current interaction mode.
+// Update handles all messages: window resizing, refresh ticks, key events,
+// and mouse events. Key handling depends on the current interaction mode.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.tbl.SetWidth(msg.Width)
-		h := msg.Height - 2
+		h := msg.Height - 3 // status(1) + summary(1) + hints(1)
 		if h < 3 {
 			h = 3
 		}
 		m.tbl.SetHeight(h)
 		m.tbl.SetColumns(ui.BuildColumns(msg.Width))
+		m.applySortIndicator()
 		return m, nil
 
 	case tickMsg:
 		cmds := []tea.Cmd{tickCmd(m.interval)}
-		if !m.paused {
+		if !m.paused && !m.manual {
 			m.refresh()
 		}
 		return m, tea.Batch(cmds...)
@@ -40,6 +41,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshMsg:
 		m.refresh()
 		return m, nil
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
 		switch m.mode {
@@ -51,6 +55,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDetail(msg)
 		case modeSignal:
 			return m.updateSignal(msg)
+		case modeHelp:
+			return m.updateHelp(msg)
 		default:
 			return m.updateTable(msg)
 		}
@@ -59,10 +65,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateHelp handles keys in the F1 full-screen help overlay.
+func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.help = false
+		m.mode = modeTable
+		return m, nil
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	}
+	if keyMatches(msg, m.keys.Help) || keyMatches(msg, m.keys.Quit) {
+		m.help = false
+		m.mode = modeTable
+		return m, nil
+	}
+	return m, nil
+}
+
 // updateTable handles keys in the default table-navigation mode.
 func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Export and quit work even on an empty table; navigation/search/filter
-	// are skipped when there are no rows.
 	empty := len(m.socks) == 0
 	switch {
 	case keyMatches(msg, m.keys.Quit):
@@ -71,13 +94,17 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, m.keys.Export):
 		m.doExport()
 		return m, nil
-	case empty && !keyMatches(msg, m.keys.Search) && !keyMatches(msg, m.keys.Filter):
+	case empty && !keyMatches(msg, m.keys.Search) && !keyMatches(msg, m.keys.Filter) && !keyMatches(msg, m.keys.Help):
 		return m, nil
 
 	case keyMatches(msg, m.keys.Pause):
+		if m.manual {
+			m.setStatus("manual mode: press r to refresh", 2*time.Second)
+			return m, nil
+		}
 		m.paused = !m.paused
 		if m.paused {
-			m.setStatus("[PAUSED]", 0)
+			m.setStatus("[PAUSED]", 0) // persistent until unpaused
 		} else {
 			m.setStatus("resumed", 2*time.Second)
 		}
@@ -91,7 +118,11 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, m.keys.Sort):
 		m.sortKey = m.sortKey.next()
 		m.applySort()
-		m.setStatus("sort: "+m.sortKey.String()+" asc", 2*time.Second)
+		dir := "asc"
+		if !m.sortAsc {
+			dir = "desc"
+		}
+		m.setStatus("sort: "+m.sortKey.String()+" "+dir, 2*time.Second)
 		return m, nil
 
 	case keyMatches(msg, m.keys.SortDir):
@@ -104,6 +135,17 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setStatus("sort: "+m.sortKey.String()+" "+dir, 2*time.Second)
 		return m, nil
 
+	case keyMatches(msg, m.keys.ToggleSvc):
+		m.showService = !m.showService
+		m.rebuild()
+		m.clampCursor()
+		if m.showService {
+			m.setStatus("showing service names", 2*time.Second)
+		} else {
+			m.setStatus("showing port numbers", 2*time.Second)
+		}
+		return m, nil
+
 	case keyMatches(msg, m.keys.Search):
 		m.mode = modeSearch
 		m.searchInput.Reset()
@@ -114,8 +156,12 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.enterFilterForm()
 		return m, textinput.Blink
 
+	case keyMatches(msg, m.keys.Help):
+		m.help = true
+		m.mode = modeHelp
+		return m, nil
+
 	case keyMatches(msg, m.keys.Escape):
-		// In table mode Esc clears all active filters (FR-03-08).
 		if !m.filt.IsEmpty() {
 			m.filt = filter.Filter{}
 			m.rebuild()
@@ -136,10 +182,10 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, m.keys.PageDn):
 		m.tbl.MoveDown(m.tbl.Height())
 		return m, nil
-	case keyMatches(msg, m.keys.Home):
+	case keyMatches(msg, m.keys.Home), keyMatches(msg, m.keys.Top):
 		m.tbl.GotoTop()
 		return m, nil
-	case keyMatches(msg, m.keys.End):
+	case keyMatches(msg, m.keys.End), keyMatches(msg, m.keys.Bottom):
 		m.tbl.GotoBottom()
 		return m, nil
 
@@ -149,14 +195,12 @@ func (m Model) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(msg, m.keys.Kill):
 		m.openSignal()
 		return m, nil
-	case keyMatches(msg, m.keys.Help):
-		m.setStatus("not available yet", time.Second)
-		return m, nil
 	}
 	return m, nil
 }
 
-// updateDetail handles the process detail side panel: Esc closes it.
+// updateDetail handles the process detail side panel: Esc closes it,
+// ↑/↓ scroll, K opens signal dialog.
 func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEscape, tea.KeyEnter:
@@ -167,12 +211,24 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
-	// 'k' inside detail could be reused to send a signal (FR-04-02 hints).
-	if keyMatches(msg, m.keys.Kill) && m.detail != nil && m.detail.pid > 0 {
-		m.signal = &SignalState{pid: m.detail.pid, name: m.detail.proc.Name, sel: defaultSignalIndex()}
-		m.mode = modeSignal
-		m.detail = nil
+	switch {
+	case keyMatches(msg, m.keys.Up):
+		if m.detail != nil && m.detail.scroll > 0 {
+			m.detail.scroll--
+		}
 		return m, nil
+	case keyMatches(msg, m.keys.Down):
+		if m.detail != nil {
+			m.detail.scroll++
+		}
+		return m, nil
+	case keyMatches(msg, m.keys.Kill):
+		if m.detail != nil && m.detail.pid > 0 {
+			m.signal = &SignalState{pid: m.detail.pid, name: m.detail.proc.Name, sel: defaultSignalIndex()}
+			m.mode = modeSignal
+			m.detail = nil
+			return m, nil
+		}
 	}
 	return m, nil
 }
@@ -188,7 +244,7 @@ func (m Model) updateSignal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEscape:
 		if m.signal.confirm {
-			m.signal.confirm = false // back to selection
+			m.signal.confirm = false
 			m.signal.result = ""
 		} else {
 			m.mode = modeTable
@@ -214,20 +270,17 @@ func (m Model) updateSignal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.signal.confirm {
-		// Confirmation step: Enter sends, Esc (handled above) cancels.
 		if msg.Type == tea.KeyEnter {
 			m.sendCurrentSignal()
 			res := m.signal.result
 			m.setStatus(res, 3*time.Second)
 			m.mode = modeTable
 			m.signal = nil
-			// Trigger a refresh so the table reflects the signal effect.
 			return m, refreshCmd()
 		}
 		return m, nil
 	}
 
-	// Selection step: Enter opens the confirmation dialog.
 	if msg.Type == tea.KeyEnter {
 		m.signal.confirm = true
 		return m, nil
@@ -239,7 +292,6 @@ func (m Model) updateSignal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter, tea.KeyEscape:
-		// Exit search mode, keeping the typed filter applied.
 		m.searchInput.Blur()
 		m.mode = modeTable
 		m.clampCursor()
@@ -256,6 +308,31 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clampCursor()
 	}
 	return m, cmd
+}
+
+// handleMouse processes mouse events: click selects a row, wheel scrolls.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonLeft:
+		// Click in the table area: select the row under the cursor.
+		// Table starts at row 2 (status + summary), header is row 1 within table.
+		tableStart := 2 // status(1) + summary(1)
+		if msg.Y < tableStart {
+			return m, nil
+		}
+		rowIdx := msg.Y - tableStart - 1 // -1 for table header
+		if rowIdx >= 0 && rowIdx < len(m.socks) {
+			m.tbl.SetCursor(rowIdx)
+		}
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		m.tbl.MoveDown(1)
+		return m, nil
+	case tea.MouseButtonWheelUp:
+		m.tbl.MoveUp(1)
+		return m, nil
+	}
+	return m, nil
 }
 
 // enterFilterForm opens the filter form, pre-populating inputs from the active
@@ -357,7 +434,7 @@ func (m *Model) exitFilterForm() {
 // buildFilterFromInputs parses the form inputs into a Filter, preserving the
 // free-text search field. Returns an error on the first invalid field.
 func (m Model) buildFilterFromInputs() (filter.Filter, error) {
-	f := m.filt // preserve Text
+	f := m.filt
 	f.Ports, f.Protocols, f.States = nil, nil, nil
 	f.Process, f.PID, f.User, f.Container = "", 0, "", ""
 	f.LocalCIDR, f.RemoteCIDR = nil, nil

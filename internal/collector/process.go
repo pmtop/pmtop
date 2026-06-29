@@ -10,9 +10,9 @@ import (
 // (reported in pages). It is 4096 on all supported Linux architectures.
 const linuxPageSize = 4096
 
-// defaultHZ is the USER_HZ clock frequency used to convert tick fields
+// DefaultHZ is the USER_HZ clock frequency used to convert tick fields
 // (utime/stime/starttime) to seconds. USER_HZ is 100 on all mainstream Linux.
-const defaultHZ = 100
+const DefaultHZ = 100
 
 // ProcessInfo holds the enriched attributes of a single process, gathered from
 // several /proc/<pid> files. Used both for socket ownership enrichment and for
@@ -106,7 +106,7 @@ func ReadProcess(fs FS, procRoot string, pid int) (ProcessInfo, error) {
 	// Compute wall-clock start time from boot time + starttime ticks.
 	if pi.StartTicks > 0 {
 		if boot, err := BootTime(fs, procRoot); err == nil {
-			pi.StartTime = time.Unix(boot+int64(pi.StartTicks)/defaultHZ, 0).UTC()
+			pi.StartTime = time.Unix(boot+int64(pi.StartTicks)/DefaultHZ, 0).UTC()
 		}
 	}
 

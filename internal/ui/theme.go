@@ -12,22 +12,24 @@ import (
 // Style holds lipgloss styles for the TUI. When color is disabled (NO_COLOR),
 // styleRow returns rows unchanged and relies on the state symbols.
 type Style struct {
-	noColor bool
+	noColor    bool
+	colorblind bool
 
 	// chrome styles
-	header     lipgloss.Style
-	statusBar  lipgloss.Style
-	hintBar    lipgloss.Style
-	selected   lipgloss.Style
-	warn       lipgloss.Style
+	header    lipgloss.Style
+	statusBar lipgloss.Style
+	hintBar   lipgloss.Style
+	selected  lipgloss.Style
+	warn      lipgloss.Style
 
 	// per-state text colors
 	stateStyles map[netstat.State]lipgloss.Style
 }
 
-// NewStyle returns a Style honoring the NO_COLOR environment variable.
-func NewStyle() *Style {
-	s := &Style{noColor: NoColor()}
+// NewStyle returns a Style honoring the NO_COLOR environment variable and
+// optional colorblind mode (FR-10-02).
+func NewStyle(noColor, colorblind bool) *Style {
+	s := &Style{noColor: noColor, colorblind: colorblind}
 	if s.noColor {
 		s.header = lipgloss.NewStyle().Bold(true)
 		s.statusBar = lipgloss.NewStyle()
@@ -42,19 +44,37 @@ func NewStyle() *Style {
 	s.selected = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	s.warn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 
-	s.stateStyles = map[netstat.State]lipgloss.Style{
-		netstat.StateListen:     lipgloss.NewStyle().Foreground(lipgloss.Color("2")), // green
-		netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("4")), // blue
-		netstat.StateTimeWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")), // yellow
-		netstat.StateCloseWait:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")), // red
-		netstat.StateSynSent:    lipgloss.NewStyle().Foreground(lipgloss.Color("5")), // magenta
-		netstat.StateClosing:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-		netstat.StateFinWait1:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		netstat.StateFinWait2:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		netstat.StateConnected:  lipgloss.NewStyle().Foreground(lipgloss.Color("4")),
+	if colorblind {
+		// Colorblind-safe palette: avoid red/green pairs; rely on symbols.
+		s.stateStyles = map[netstat.State]lipgloss.Style{
+			netstat.StateListen:      lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true), // bright cyan
+			netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("12")),            // bright blue
+			netstat.StateTimeWait:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),            // bright yellow
+			netstat.StateCloseWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),  // bright red bold
+			netstat.StateSynSent:     lipgloss.NewStyle().Foreground(lipgloss.Color("13")),            // bright magenta
+			netstat.StateClosing:     lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),
+			netstat.StateFinWait1:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+			netstat.StateFinWait2:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+			netstat.StateConnected:   lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+		}
+	} else {
+		s.stateStyles = map[netstat.State]lipgloss.Style{
+			netstat.StateListen:      lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true), // green bold
+			netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("6")),            // cyan
+			netstat.StateTimeWait:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),            // yellow
+			netstat.StateCloseWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),            // red
+			netstat.StateSynSent:     lipgloss.NewStyle().Foreground(lipgloss.Color("5")),            // magenta
+			netstat.StateClosing:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+			netstat.StateFinWait1:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+			netstat.StateFinWait2:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+			netstat.StateConnected:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+		}
 	}
 	return s
 }
+
+// Colorblind reports whether colorblind mode is active.
+func (s *Style) Colorblind() bool { return s.colorblind }
 
 // styleRow applies state coloring to the Proto and State cells of a row.
 func (s *Style) styleRow(row table.Row, sock netstat.SocketInfo) table.Row {
@@ -72,7 +92,8 @@ func (s *Style) styleRow(row table.Row, sock netstat.SocketInfo) table.Row {
 	return row
 }
 
-// StatusBar renders the top status bar.
+// StatusBar renders the top status bar. The right side is truncated if it
+// would overflow the terminal width.
 func (s *Style) StatusBar(version string, root, paused bool, interval string, filterSummary string, width int) string {
 	mode := "user"
 	if root {
@@ -89,7 +110,15 @@ func (s *Style) StatusBar(version string, root, paused bool, interval string, fi
 	}
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
-		gap = 0
+		// Truncate right side to fit.
+		avail := width - lipgloss.Width(left)
+		if avail < 0 {
+			avail = 0
+		}
+		if avail < lipgloss.Width(right) {
+			right = TruncateRight(right, avail)
+			gap = 0
+		}
 	}
 	return s.statusBar.Render(left + strings.Repeat(" ", gap) + right)
 }
@@ -102,4 +131,94 @@ func (s *Style) HintBar(hints string, width int) string {
 // Warn renders a warning banner (e.g. restricted-mode notice).
 func (s *Style) Warn(text string) string {
 	return s.warn.Render(text)
+}
+
+// StateColor returns the lipgloss style for a given state, or a no-op style.
+func (s *Style) StateColor(st netstat.State) lipgloss.Style {
+	if s.noColor {
+		return lipgloss.NewStyle()
+	}
+	if style, ok := s.stateStyles[st]; ok {
+		return style
+	}
+	return lipgloss.NewStyle()
+}
+
+// SummaryBar renders a single-line connection count summary with state colors.
+// Example: "LISTEN:12 ESTAB:8 TIME_WAIT:3 UDP:5"
+func (s *Style) SummaryBar(counts []StateCount, width int) string {
+	if len(counts) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, c := range counts {
+		label := c.Label
+		if label == "" {
+			label = c.State.String()
+		}
+		text := label + ":" + itoa(c.Count)
+		if !s.noColor {
+			text = s.StateColor(c.State).Render(text)
+		}
+		parts = append(parts, text)
+	}
+	line := strings.Join(parts, "  ")
+	if w := lipgloss.Width(line); w > width && width > 0 {
+		line = TruncateRight(line, width)
+	}
+	return line
+}
+
+// StateCount pairs a state with its connection count for the summary bar.
+type StateCount struct {
+	State netstat.State
+	Label string
+	Count int
+}
+
+// TruncateRight truncates s to fit within maxDisplayWidth, appending "…" if
+// truncation occurs. The ellipsis counts toward the width budget.
+func TruncateRight(s string, maxDisplayWidth int) string {
+	if maxDisplayWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxDisplayWidth {
+		return s
+	}
+	target := maxDisplayWidth - 1 // reserve 1 for ellipsis
+	if target < 0 {
+		target = 0
+	}
+	width := lipgloss.Width(s)
+	for width > target && len(s) > 0 {
+		s = s[:len(s)-1]
+		width = lipgloss.Width(s)
+	}
+	if maxDisplayWidth > 1 {
+		s += "…"
+	}
+	return s
+}
+
+// itoa is a small allocation-free int -> string converter.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
 }

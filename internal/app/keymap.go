@@ -15,6 +15,8 @@ type KeyMap struct {
 	PageDn  key.Binding
 	Home    key.Binding
 	End     key.Binding
+	Top     key.Binding // g: vim-style go to top
+	Bottom  key.Binding // G: vim-style go to bottom
 	Enter   key.Binding
 	Escape  key.Binding
 	Search  key.Binding
@@ -27,29 +29,33 @@ type KeyMap struct {
 	Export  key.Binding
 	Help    key.Binding
 	Quit    key.Binding
+	ToggleSvc key.Binding // p: toggle service name/port
 }
 
 // DefaultKeyMap returns the standard set of key bindings.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		Up:      key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		Down:    key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		PageUp:  key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp", "page up")),
-		PageDn:  key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("PgDn", "page down")),
-		Home:    key.NewBinding(key.WithKeys("home"), key.WithHelp("Home", "top")),
-		End:     key.NewBinding(key.WithKeys("end"), key.WithHelp("End", "bottom")),
-		Enter:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "detail")),
-		Escape:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "close")),
-		Search:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
-		Filter:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
-		Sort:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort col")),
-		SortDir: key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "sort dir")),
-		Kill:    key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "signal")),
-		Pause:   key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "pause")),
-		Refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
-		Export:  key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export")),
-		Help:    key.NewBinding(key.WithKeys("f1"), key.WithHelp("F1", "help")),
-		Quit:    key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Up:        key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		Down:      key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+		PageUp:    key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp", "page up")),
+		PageDn:    key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("PgDn", "page down")),
+		Home:      key.NewBinding(key.WithKeys("home"), key.WithHelp("Home", "top")),
+		End:       key.NewBinding(key.WithKeys("end"), key.WithHelp("End", "bottom")),
+		Top:       key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "top")),
+		Bottom:    key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "bottom")),
+		Enter:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "detail")),
+		Escape:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "close")),
+		Search:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+		Filter:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+		Sort:      key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort col")),
+		SortDir:   key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "sort dir")),
+		Kill:      key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "signal")),
+		Pause:     key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "pause")),
+		Refresh:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+		Export:    key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export")),
+		Help:      key.NewBinding(key.WithKeys("f1", "?"), key.WithHelp("F1", "help")),
+		Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		ToggleSvc: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "svc/port")),
 	}
 }
 
@@ -61,8 +67,8 @@ func (k KeyMap) ShortHelp() []key.Binding {
 // FullHelp returns grouped help entries for the F1 help overlay.
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.PageUp, k.PageDn, k.Home, k.End},
-		{k.Enter, k.Search, k.Filter, k.Sort, k.SortDir, k.Kill},
+		{k.Up, k.Down, k.PageUp, k.PageDn, k.Top, k.Bottom, k.Home, k.End},
+		{k.Enter, k.Search, k.Filter, k.Sort, k.SortDir, k.ToggleSvc, k.Kill},
 		{k.Pause, k.Refresh, k.Export, k.Help, k.Quit},
 	}
 }

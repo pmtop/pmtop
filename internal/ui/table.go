@@ -25,10 +25,12 @@ const (
 	ColContainer
 )
 
+// NumColumns is the total number of columns in the table.
+const NumColumns = 8
+
 // BuildColumns returns the table column set fit to the given total width.
 // Narrow terminals progressively shrink the wider text columns.
 func BuildColumns(width int) []table.Column {
-	// Fixed-ish widths for short columns; flexible for text columns.
 	proto := 9
 	state := 11
 	pid := 7
@@ -39,19 +41,16 @@ func BuildColumns(width int) []table.Column {
 	container := 12
 
 	fixed := proto + state + pid
-	// 7 column separators (3 chars each " │ " in bubbles table) + padding.
-	separators := 7 * 3
+	separators := (NumColumns - 1) * 3
 	avail := width - fixed - separators
 	if avail < 40 {
 		avail = 40
 	}
-	// Distribute available width across the 4 text columns.
 	local = clamp(local, avail/5)
 	remote = clamp(remote, avail/5)
 	process = clamp(process, avail/3)
 	user = clamp(user, avail/6)
 	container = clamp(container, avail/6)
-	// Recompute to fit within avail by trimming the largest first.
 	for totalWidth(fixed, separators, local, remote, process, user, container) > width && width > 0 {
 		switch {
 		case process > 6:
@@ -81,6 +80,7 @@ done:
 	}
 }
 
+// totalWidth computes the full rendered width of all columns plus separators.
 func totalWidth(fixed, sep, local, remote, process, user, container int) int {
 	return fixed + sep + local + remote + process + user + container
 }
@@ -112,25 +112,36 @@ func stateCell(s netstat.SocketInfo) string {
 }
 
 // localCell renders "addr:port" (or the unix path, truncated by the table).
-func localCell(s netstat.SocketInfo) string {
+// When showService is true, known ports are replaced with their service name.
+func localCell(s netstat.SocketInfo, showService bool) string {
 	if s.Protocol == netstat.ProtocolUnix {
 		if s.Path == "" {
 			return "(anonymous)"
 		}
 		return s.Path
 	}
-	return s.LocalAddr + ":" + strconv.Itoa(int(s.LocalPort))
+	return formatEndpoint(s.LocalAddr, s.LocalPort, showService)
 }
 
 // remoteCell renders the remote endpoint.
-func remoteCell(s netstat.SocketInfo) string {
+func remoteCell(s netstat.SocketInfo, showService bool) string {
 	if s.Protocol == netstat.ProtocolUnix {
 		return "-"
 	}
 	if s.RemoteAddr == "" || (s.RemoteAddr == "0.0.0.0" && s.RemotePort == 0) {
 		return "*"
 	}
-	return s.RemoteAddr + ":" + strconv.Itoa(int(s.RemotePort))
+	return formatEndpoint(s.RemoteAddr, s.RemotePort, showService)
+}
+
+// formatEndpoint renders "addr:port" or "addr:service" when showService is true.
+func formatEndpoint(addr string, port uint16, showService bool) string {
+	if showService {
+		if name, ok := serviceName(port); ok {
+			return addr + ":" + name
+		}
+	}
+	return addr + ":" + strconv.Itoa(int(port))
 }
 
 // pidCell renders the PID or "-".
@@ -155,8 +166,13 @@ func containerCell(s netstat.SocketInfo) string {
 	return "-"
 }
 
+// RowOptions controls row rendering behavior (display modes).
+type RowOptions struct {
+	ShowService bool // p key: show service names instead of port numbers
+}
+
 // RowsFromSockets converts sockets into table rows in column order.
-func RowsFromSockets(socks []netstat.SocketInfo, style *Style) []table.Row {
+func RowsFromSockets(socks []netstat.SocketInfo, style *Style, opts RowOptions) []table.Row {
 	rows := make([]table.Row, 0, len(socks))
 	for _, s := range socks {
 		var pid, proc, user, container string
@@ -176,8 +192,8 @@ func RowsFromSockets(socks []netstat.SocketInfo, style *Style) []table.Row {
 		}
 		row := table.Row{
 			protoCell(s),
-			localCell(s),
-			remoteCell(s),
+			localCell(s, opts.ShowService),
+			remoteCell(s, opts.ShowService),
 			stateCell(s),
 			pid,
 			proc,
@@ -192,9 +208,61 @@ func RowsFromSockets(socks []netstat.SocketInfo, style *Style) []table.Row {
 	return rows
 }
 
-// NoColor reports whether color output is disabled (NO_COLOR env or
-// colorblind_mode). When true, callers rely on the state symbols instead.
+// NoColor reports whether color output is disabled (NO_COLOR env).
 func NoColor() bool {
 	_, ok := os.LookupEnv("NO_COLOR")
 	return ok
+}
+
+// serviceName maps common port numbers to their service names.
+var serviceNameMap = map[uint16]string{
+	20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp",
+	53: "dns", 67: "dhcp", 68: "dhcp", 80: "http", 110: "pop3",
+	143: "imap", 443: "https", 465: "smtps", 587: "submission",
+	993: "imaps", 995: "pop3s", 3306: "mysql", 5432: "pgsql",
+	6379: "redis", 8080: "http-alt", 8443: "https-alt",
+	9090: "prom", 9200: "es", 11211: "memcache", 27017: "mongo",
+}
+
+// serviceName returns the service name for a known port.
+func serviceName(port uint16) (string, bool) {
+	name, ok := serviceNameMap[port]
+	return name, ok
+}
+
+// ColumnTitleForSort returns the title for a column given the sort key index
+// and direction, appending a ▲ or ▼ indicator to the sorted column.
+func ColumnTitleForSort(base string, isSorted bool, asc bool) string {
+	if !isSorted {
+		return base
+	}
+	if asc {
+		return base + " ▲"
+	}
+	return base + " ▼"
+}
+
+// SortColumnIndex maps an app-level sort key index to the table column index.
+// Returns -1 if the sort key has no corresponding column.
+func SortColumnIndex(sortKeyIdx int) int {
+	switch sortKeyIdx {
+	case 0: // SortProto
+		return ColProto
+	case 1: // SortLocal
+		return ColLocal
+	case 2: // SortPort
+		return ColLocal // port sorts by local column
+	case 3: // SortRemote
+		return ColRemote
+	case 4: // SortState
+		return ColState
+	case 5: // SortPID
+		return ColPID
+	case 6: // SortProcess
+		return ColProcess
+	case 7: // SortContainer
+		return ColContainer
+	default:
+		return -1
+	}
 }
