@@ -13,86 +13,53 @@ import (
 	"github.com/pmtop/pmtop/pkg/netstat"
 )
 
-// Column identifiers (indices into the column set).
+// Column identifiers (indices into the column set). The left table shows only
+// these 5 columns; PID/Process/User/Container live in the right detail panel.
 const (
-	ColProto = iota
-	ColLocal
-	ColRemote
-	ColState
-	ColPID
-	ColProcess
-	ColUser
-	ColContainer
+	ColSeq = iota // 0: row sequence number
+	ColProto      // 1: protocol + state symbol
+	ColLocal      // 2: local address:port
+	ColRemote     // 3: remote address:port
+	ColState      // 4: state name
 )
 
-// NumColumns is the total number of columns in the table.
-const NumColumns = 8
+// NumColumns is the total number of columns in the left table.
+const NumColumns = 5
 
 // BuildColumns returns the table column set fit to the given total width.
-// Narrow terminals progressively shrink the wider text columns.
+// The left table is narrower than the terminal (terminal - rightPanelWidth),
+// so columns are compact: #, Proto, Local, Remote, State.
 func BuildColumns(width int) []table.Column {
-	proto := 9
-	state := 11
-	pid := 7
-	local := 22
-	remote := 22
-	process := 16
-	user := 10
-	container := 12
-
-	fixed := proto + state + pid
+	seq := 4
+	proto := 6
+	state := 9
+	fixed := seq + proto + state
 	separators := (NumColumns - 1) * 3
 	avail := width - fixed - separators
-	if avail < 40 {
-		avail = 40
+	if avail < 8 {
+		avail = 8
 	}
-	local = clamp(local, avail/5)
-	remote = clamp(remote, avail/5)
-	process = clamp(process, avail/3)
-	user = clamp(user, avail/6)
-	container = clamp(container, avail/6)
-	for totalWidth(fixed, separators, local, remote, process, user, container) > width && width > 0 {
+	local := avail / 2
+	remote := avail - local
+	// Trim to fit within width.
+	for fixed+separators+local+remote > width && width > 0 {
 		switch {
-		case process > 6:
-			process--
-		case remote > 6:
+		case remote > 4:
 			remote--
-		case local > 6:
+		case local > 4:
 			local--
-		case container > 4:
-			container--
-		case user > 4:
-			user--
 		default:
 			goto done
 		}
 	}
 done:
 	return []table.Column{
+		{Title: "#", Width: seq},
 		{Title: "Proto", Width: proto},
 		{Title: "Local", Width: local},
 		{Title: "Remote", Width: remote},
 		{Title: "State", Width: state},
-		{Title: "PID", Width: pid},
-		{Title: "Process", Width: process},
-		{Title: "User", Width: user},
-		{Title: "Container", Width: container},
 	}
-}
-
-// totalWidth computes the full rendered width of all columns plus separators.
-func totalWidth(fixed, sep, local, remote, process, user, container int) int {
-	return fixed + sep + local + remote + process + user + container
-}
-
-func clamp(v, max int) int {
-	if v > max {
-		return max
-	}
-	if v < 4 {
-		return 4
-	}
-	return v
 }
 
 // protoCell renders the protocol + state symbol cell, e.g. "TCP ▶".
@@ -116,7 +83,7 @@ func stateCell(s netstat.SocketInfo) string {
 func localCell(s netstat.SocketInfo, showService bool) string {
 	if s.Protocol == netstat.ProtocolUnix {
 		if s.Path == "" {
-			return "(anonymous)"
+			return "(anon)"
 		}
 		return s.Path
 	}
@@ -144,61 +111,22 @@ func formatEndpoint(addr string, port uint16, showService bool) string {
 	return addr + ":" + strconv.Itoa(int(port))
 }
 
-// pidCell renders the PID or "-".
-func pidCell(s netstat.SocketInfo) string {
-	if s.PID == 0 {
-		return "-"
-	}
-	return strconv.Itoa(s.PID)
-}
-
-// containerCell renders the container name, short id, or "-".
-func containerCell(s netstat.SocketInfo) string {
-	if s.ContainerName != "" {
-		return s.ContainerName
-	}
-	if s.ContainerID != "" {
-		if len(s.ContainerID) > 12 {
-			return s.ContainerID[:12]
-		}
-		return s.ContainerID
-	}
-	return "-"
-}
-
 // RowOptions controls row rendering behavior (display modes).
 type RowOptions struct {
 	ShowService bool // p key: show service names instead of port numbers
 }
 
-// RowsFromSockets converts sockets into table rows in column order.
+// RowsFromSockets converts sockets into table rows with sequence numbers.
+// Each row has exactly NumColumns elements.
 func RowsFromSockets(socks []netstat.SocketInfo, style *Style, opts RowOptions) []table.Row {
 	rows := make([]table.Row, 0, len(socks))
-	for _, s := range socks {
-		var pid, proc, user, container string
-		if s.PID == 0 {
-			pid, proc, user, container = "-", "-", "-", "-"
-		} else {
-			pid = pidCell(s)
-			proc = s.ProcessName
-			if proc == "" {
-				proc = "-"
-			}
-			user = s.User
-			if user == "" {
-				user = strconv.Itoa(int(s.UID))
-			}
-			container = containerCell(s)
-		}
+	for i, s := range socks {
 		row := table.Row{
-			protoCell(s),
-			localCell(s, opts.ShowService),
-			remoteCell(s, opts.ShowService),
-			stateCell(s),
-			pid,
-			proc,
-			user,
-			container,
+			strconv.Itoa(i + 1),            // #
+			protoCell(s),                   // Proto
+			localCell(s, opts.ShowService),  // Local
+			remoteCell(s, opts.ShowService), // Remote
+			stateCell(s),                   // State
 		}
 		if style != nil {
 			row = style.styleRow(row, s)
@@ -237,13 +165,14 @@ func ColumnTitleForSort(base string, isSorted bool, asc bool) string {
 		return base
 	}
 	if asc {
-		return base + " ▲"
+		return base + "▲"
 	}
-	return base + " ▼"
+	return base + "▼"
 }
 
 // SortColumnIndex maps an app-level sort key index to the table column index.
-// Returns -1 if the sort key has no corresponding column.
+// Returns -1 if the sort key has no corresponding column (PID/Process/Container
+// are in the detail panel, not the table).
 func SortColumnIndex(sortKeyIdx int) int {
 	switch sortKeyIdx {
 	case 0: // SortProto
@@ -251,18 +180,12 @@ func SortColumnIndex(sortKeyIdx int) int {
 	case 1: // SortLocal
 		return ColLocal
 	case 2: // SortPort
-		return ColLocal // port sorts by local column
+		return ColLocal
 	case 3: // SortRemote
 		return ColRemote
 	case 4: // SortState
 		return ColState
-	case 5: // SortPID
-		return ColPID
-	case 6: // SortProcess
-		return ColProcess
-	case 7: // SortContainer
-		return ColContainer
-	default:
+	default: // SortPID, SortProcess, SortContainer — not in table
 		return -1
 	}
 }

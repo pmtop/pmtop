@@ -15,20 +15,19 @@ type DetailProvider interface {
 	CgroupDetail(pid int) (collector.CgroupInfo, error)
 }
 
-// SignalSender sends a signal to a process. Abstracted so tests don't kill
-// real processes.
+// SignalSender sends a signal to a process.
 type SignalSender interface {
 	Send(pid int, sig process.Signal) error
 }
 
-// realSender delegates to the platform process.SendSignal.
 type realSender struct{}
 
 func (realSender) Send(pid int, sig process.Signal) error {
 	return process.SendSignal(pid, sig)
 }
 
-// DetailState holds the rendered process-detail side panel content.
+// DetailState holds the process-detail panel content. The panel is always
+// visible in the right-upper area and auto-updates when the cursor moves.
 type DetailState struct {
 	pid      int
 	proc     collector.ProcessInfo
@@ -37,16 +36,13 @@ type DetailState struct {
 	pkgErr   error
 	err      error
 	ready    bool
-	scroll   int // scroll offset for long content
-
-	// CPU% tracking (sampled across refreshes).
 	prevUTime uint64
 	prevSTime uint64
 	prevTime  time.Time
 	cpuPct    float64
 }
 
-// SignalState holds the signal-selection dialog state.
+// SignalState holds the signal-selection panel state (right-bottom area).
 type SignalState struct {
 	pid     int
 	name    string
@@ -55,23 +51,31 @@ type SignalState struct {
 	result  string
 }
 
-// openDetail fetches process/cgroup/package info for the selected socket and
-// opens the detail panel. Synchronous /proc reads are fast enough for M4.
-func (m *Model) openDetail() {
+// updateDetailPanel fetches process/cgroup/package info for the currently
+// selected socket and updates m.detail. If the PID hasn't changed, only the
+// CPU% is recalculated from the tick delta.
+func (m *Model) updateDetailPanel() {
 	s, ok := m.currentSocket()
 	if !ok || s.PID <= 0 {
-		m.setStatus("no process for this socket", 2*time.Second)
+		m.detail = nil
 		return
 	}
-	d := &DetailState{pid: s.PID}
+	pid := s.PID
+
+	// Same PID: just refresh data for CPU%.
+	if m.detail != nil && m.detail.pid == pid && m.detail.ready {
+		m.updateDetailData()
+		return
+	}
+
+	d := &DetailState{pid: pid}
 	dp, ok := m.source.(DetailProvider)
 	if !ok {
 		d.err = errDetailUnavailable
 		m.detail = d
-		m.mode = modeDetail
 		return
 	}
-	if pi, err := dp.ProcessDetail(s.PID); err == nil {
+	if pi, err := dp.ProcessDetail(pid); err == nil {
 		d.proc = pi
 		d.prevUTime = pi.UTime
 		d.prevSTime = pi.STime
@@ -79,10 +83,9 @@ func (m *Model) openDetail() {
 	} else {
 		d.err = err
 	}
-	if cg, err := dp.CgroupDetail(s.PID); err == nil {
+	if cg, err := dp.CgroupDetail(pid); err == nil {
 		d.cg = cg
 	}
-	// Owning package of the executable (best-effort).
 	if d.proc.Exe != "" {
 		if name, _, err := process.PackageOwner(d.proc.Exe); err == nil {
 			d.pkgName = name
@@ -92,11 +95,10 @@ func (m *Model) openDetail() {
 	}
 	d.ready = true
 	m.detail = d
-	m.mode = modeDetail
 }
 
-// updateDetailData refreshes the process info for the open detail panel and
-// computes CPU% from the delta since the last sample.
+// updateDetailData refreshes process info for the open detail panel and
+// computes CPU% from the tick delta.
 func (m *Model) updateDetailData() {
 	if m.detail == nil {
 		return
@@ -109,7 +111,6 @@ func (m *Model) updateDetailData() {
 	if err != nil {
 		return
 	}
-	// Compute CPU% from tick delta.
 	total := pi.UTime + pi.STime
 	prevTotal := m.detail.prevUTime + m.detail.prevSTime
 	elapsed := time.Since(m.detail.prevTime).Seconds()
@@ -123,7 +124,7 @@ func (m *Model) updateDetailData() {
 	m.detail.proc = pi
 }
 
-// openSignal opens the signal-selection dialog for the selected process.
+// openSignal opens the signal-selection panel for the selected process.
 func (m *Model) openSignal() {
 	s, ok := m.currentSocket()
 	if !ok || s.PID <= 0 {
@@ -134,7 +135,6 @@ func (m *Model) openSignal() {
 	m.mode = modeSignal
 }
 
-// defaultSignalIndex returns the index of SIGTERM in process.Signals.
 func defaultSignalIndex() int {
 	for i, s := range process.Signals {
 		if s.Name == "SIGTERM" {
@@ -144,7 +144,6 @@ func defaultSignalIndex() int {
 	return 0
 }
 
-// sendCurrentSignal dispatches the selected signal and records the result.
 func (m *Model) sendCurrentSignal() {
 	if m.signal == nil || m.sender == nil {
 		return
@@ -157,7 +156,6 @@ func (m *Model) sendCurrentSignal() {
 	}
 }
 
-// itoa is a small allocation-free int -> string converter.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
@@ -180,15 +178,13 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// errDetailUnavailable is returned when the data source cannot provide detail.
 var errDetailUnavailable = detailErr("detail unavailable")
 
 type detailErr string
 
 func (e detailErr) Error() string { return string(e) }
 
-// currentContainerInfo returns the container fields for the detail panel's PID,
-// looking up the socket by PID rather than cursor position (fixes Q4).
+// currentContainerInfo returns the container fields for the detail panel's PID.
 func (m Model) currentContainerInfo() netstat.SocketInfo {
 	if m.detail == nil {
 		return netstat.SocketInfo{}

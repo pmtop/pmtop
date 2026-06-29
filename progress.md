@@ -160,3 +160,5 @@
 | 2026-06-29 | TUI 优化 Phase 2：单行连接统计摘要（LISTEN:12 ESTAB:8...）、列标题排序指示器 ▲/▼、选中行整行高亮、颜色优化（LISTEN 绿粗/ESTAB 青/TIMEWAIT 黄/CLOSEWAIT 红）、底栏重设计（状态消息叠加右侧不替换提示） | 通过 |
 | 2026-06-29 | TUI 优化 Phase 3：vim g/G 跳首尾、鼠标点击选行+滚轮滚动、p 键切换服务名/端口、F1/? 全屏帮助覆层、详情面板可滚动+字段对齐、过滤表单紧凑双列布局 | 通过 |
 | 2026-06-29 | TUI 优化验证：`go test -race -cover ./...` app 80.6%/ui 80.2%，`go vet` 通过，`golangci-lint` 通过，`go build` 15.9M 二进制 `pmtop version`/`pmtop list --json` 正常 | 通过 |
+| 2026-06-29 | v0.1.1 Release：TUI 优化版发布（deb/rpm/tar.gz amd64+arm64），PR #4 merged，CI 全绿 | 通过 |
+| 2026-06-29 | TUI 分屏重构：左右分屏布局（左表格+右详情/信号面板），行序号列，详情面板始终可见跟随光标，F9 触发信号面板右下区域，ensureHeight 安全网防残留。移除 modeDetail/Enter/K 键。app 82.7%/ui 77.4%，vet+lint 通过 | 通过 |

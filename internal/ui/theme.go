@@ -45,13 +45,12 @@ func NewStyle(noColor, colorblind bool) *Style {
 	s.warn = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 
 	if colorblind {
-		// Colorblind-safe palette: avoid red/green pairs; rely on symbols.
 		s.stateStyles = map[netstat.State]lipgloss.Style{
-			netstat.StateListen:      lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true), // bright cyan
-			netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("12")),            // bright blue
-			netstat.StateTimeWait:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),            // bright yellow
-			netstat.StateCloseWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),  // bright red bold
-			netstat.StateSynSent:     lipgloss.NewStyle().Foreground(lipgloss.Color("13")),            // bright magenta
+			netstat.StateListen:      lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
+			netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+			netstat.StateTimeWait:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+			netstat.StateCloseWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),
+			netstat.StateSynSent:     lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
 			netstat.StateClosing:     lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),
 			netstat.StateFinWait1:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
 			netstat.StateFinWait2:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
@@ -59,11 +58,11 @@ func NewStyle(noColor, colorblind bool) *Style {
 		}
 	} else {
 		s.stateStyles = map[netstat.State]lipgloss.Style{
-			netstat.StateListen:      lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true), // green bold
-			netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("6")),            // cyan
-			netstat.StateTimeWait:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),            // yellow
-			netstat.StateCloseWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),            // red
-			netstat.StateSynSent:     lipgloss.NewStyle().Foreground(lipgloss.Color("5")),            // magenta
+			netstat.StateListen:      lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
+			netstat.StateEstablished: lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+			netstat.StateTimeWait:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+			netstat.StateCloseWait:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+			netstat.StateSynSent:     lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
 			netstat.StateClosing:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 			netstat.StateFinWait1:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
 			netstat.StateFinWait2:    lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
@@ -92,8 +91,8 @@ func (s *Style) styleRow(row table.Row, sock netstat.SocketInfo) table.Row {
 	return row
 }
 
-// StatusBar renders the top status bar. The right side is truncated if it
-// would overflow the terminal width.
+// StatusBar renders the top status bar, padded to full width to prevent
+// residual content from the previous frame.
 func (s *Style) StatusBar(version string, root, paused bool, interval string, filterSummary string, width int) string {
 	mode := "user"
 	if root {
@@ -103,29 +102,29 @@ func (s *Style) StatusBar(version string, root, paused bool, interval string, fi
 	if paused {
 		badge = " [PAUSED]"
 	}
-	left := "pmtop " + version + " [" + mode + "]" + badge + " refresh:" + interval
+	left := "pmtop " + version + " [" + mode + "]" + badge + " " + interval
 	right := ""
 	if filterSummary != "" {
 		right = "Filter: " + filterSummary
 	}
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
-		// Truncate right side to fit.
 		avail := width - lipgloss.Width(left)
 		if avail < 0 {
 			avail = 0
 		}
 		if avail < lipgloss.Width(right) {
-			right = TruncateRight(right, avail)
+			right = lipgloss.NewStyle().MaxWidth(avail).Render(right)
 			gap = 0
 		}
 	}
-	return s.statusBar.Render(left + strings.Repeat(" ", gap) + right)
+	content := left + strings.Repeat(" ", gap) + right
+	return s.statusBar.Width(width).Render(content)
 }
 
-// HintBar renders the bottom key-hint bar.
+// HintBar renders the bottom key-hint bar, padded to full width.
 func (s *Style) HintBar(hints string, width int) string {
-	return s.hintBar.Render(hints)
+	return s.hintBar.Width(width).Render(hints)
 }
 
 // Warn renders a warning banner (e.g. restricted-mode notice).
@@ -144,11 +143,11 @@ func (s *Style) StateColor(st netstat.State) lipgloss.Style {
 	return lipgloss.NewStyle()
 }
 
-// SummaryBar renders a single-line connection count summary with state colors.
-// Example: "LISTEN:12 ESTAB:8 TIME_WAIT:3 UDP:5"
+// SummaryBar renders a single-line connection count summary with state colors,
+// padded to full width.
 func (s *Style) SummaryBar(counts []StateCount, width int) string {
 	if len(counts) == 0 {
-		return ""
+		return strings.Repeat(" ", width)
 	}
 	var parts []string
 	for _, c := range counts {
@@ -163,10 +162,7 @@ func (s *Style) SummaryBar(counts []StateCount, width int) string {
 		parts = append(parts, text)
 	}
 	line := strings.Join(parts, "  ")
-	if w := lipgloss.Width(line); w > width && width > 0 {
-		line = TruncateRight(line, width)
-	}
-	return line
+	return lipgloss.NewStyle().MaxWidth(width).Width(width).Render(line)
 }
 
 // StateCount pairs a state with its connection count for the summary bar.
@@ -177,7 +173,7 @@ type StateCount struct {
 }
 
 // TruncateRight truncates s to fit within maxDisplayWidth, appending "…" if
-// truncation occurs. The ellipsis counts toward the width budget.
+// truncation occurs. Uses lipgloss.MaxWidth for ANSI-safe truncation.
 func TruncateRight(s string, maxDisplayWidth int) string {
 	if maxDisplayWidth <= 0 {
 		return ""
@@ -185,19 +181,7 @@ func TruncateRight(s string, maxDisplayWidth int) string {
 	if lipgloss.Width(s) <= maxDisplayWidth {
 		return s
 	}
-	target := maxDisplayWidth - 1 // reserve 1 for ellipsis
-	if target < 0 {
-		target = 0
-	}
-	width := lipgloss.Width(s)
-	for width > target && len(s) > 0 {
-		s = s[:len(s)-1]
-		width = lipgloss.Width(s)
-	}
-	if maxDisplayWidth > 1 {
-		s += "…"
-	}
-	return s
+	return lipgloss.NewStyle().MaxWidth(maxDisplayWidth).Render(s)
 }
 
 // itoa is a small allocation-free int -> string converter.
