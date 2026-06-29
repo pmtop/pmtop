@@ -121,16 +121,18 @@ func TestUpdate_WindowSize(t *testing.T) {
 	m2 := mm.(Model)
 	assert.Equal(t, 100, m2.width)
 	assert.Equal(t, 24, m2.height)
-	// table height = 24 - 2 = 22
-	assert.Equal(t, 22, m2.height-2)
+	// table height = 24 - 3 (status + summary + hints) = 21; viewport excludes header so Height() = 20
+	assert.Equal(t, 20, m2.tbl.Height())
 }
 
-func TestUpdate_NotAvailableHint(t *testing.T) {
+func TestUpdate_HelpOpensOverlay(t *testing.T) {
 	m := New(&fakeSource{socks: sampleSockets()}, "1.0.0", false, 2*time.Second)
 	m.refresh()
-	// F1 (help) is not yet implemented; shows a hint.
 	mm, _ := m.Update(tea.KeyMsg{Type: tea.KeyF1})
-	assert.Contains(t, mm.(Model).statusMsg, "not available")
+	m2 := mm.(Model)
+	assert.Equal(t, modeHelp, m2.Mode(), "F1 opens help overlay")
+	mm, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	assert.Equal(t, modeTable, mm.(Model).Mode(), "Esc closes help")
 }
 
 func TestUpdate_FilterFormEnters(t *testing.T) {

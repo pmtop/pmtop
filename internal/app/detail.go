@@ -30,13 +30,20 @@ func (realSender) Send(pid int, sig process.Signal) error {
 
 // DetailState holds the rendered process-detail side panel content.
 type DetailState struct {
-	pid     int
-	proc    collector.ProcessInfo
-	cg      collector.CgroupInfo
-	pkgName string
-	pkgErr  error
-	err     error
-	ready   bool
+	pid      int
+	proc     collector.ProcessInfo
+	cg       collector.CgroupInfo
+	pkgName  string
+	pkgErr   error
+	err      error
+	ready    bool
+	scroll   int // scroll offset for long content
+
+	// CPU% tracking (sampled across refreshes).
+	prevUTime uint64
+	prevSTime uint64
+	prevTime  time.Time
+	cpuPct    float64
 }
 
 // SignalState holds the signal-selection dialog state.
@@ -66,6 +73,9 @@ func (m *Model) openDetail() {
 	}
 	if pi, err := dp.ProcessDetail(s.PID); err == nil {
 		d.proc = pi
+		d.prevUTime = pi.UTime
+		d.prevSTime = pi.STime
+		d.prevTime = time.Now()
 	} else {
 		d.err = err
 	}
@@ -83,6 +93,34 @@ func (m *Model) openDetail() {
 	d.ready = true
 	m.detail = d
 	m.mode = modeDetail
+}
+
+// updateDetailData refreshes the process info for the open detail panel and
+// computes CPU% from the delta since the last sample.
+func (m *Model) updateDetailData() {
+	if m.detail == nil {
+		return
+	}
+	dp, ok := m.source.(DetailProvider)
+	if !ok {
+		return
+	}
+	pi, err := dp.ProcessDetail(m.detail.pid)
+	if err != nil {
+		return
+	}
+	// Compute CPU% from tick delta.
+	total := pi.UTime + pi.STime
+	prevTotal := m.detail.prevUTime + m.detail.prevSTime
+	elapsed := time.Since(m.detail.prevTime).Seconds()
+	if elapsed > 0 && prevTotal > 0 {
+		tickDelta := float64(total - prevTotal)
+		m.detail.cpuPct = tickDelta / float64(collector.DefaultHZ) / elapsed * 100.0
+	}
+	m.detail.prevUTime = pi.UTime
+	m.detail.prevSTime = pi.STime
+	m.detail.prevTime = time.Now()
+	m.detail.proc = pi
 }
 
 // openSignal opens the signal-selection dialog for the selected process.
@@ -149,12 +187,16 @@ type detailErr string
 
 func (e detailErr) Error() string { return string(e) }
 
-// currentContainerInfo returns the selected socket's container fields for the
-// detail panel.
+// currentContainerInfo returns the container fields for the detail panel's PID,
+// looking up the socket by PID rather than cursor position (fixes Q4).
 func (m Model) currentContainerInfo() netstat.SocketInfo {
-	s, ok := m.currentSocket()
-	if !ok {
+	if m.detail == nil {
 		return netstat.SocketInfo{}
 	}
-	return s
+	for _, s := range m.socks {
+		if s.PID == m.detail.pid {
+			return s
+		}
+	}
+	return netstat.SocketInfo{}
 }

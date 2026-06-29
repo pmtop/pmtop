@@ -2,8 +2,10 @@ package ui
 
 import (
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -12,24 +14,22 @@ import (
 
 func TestBuildColumns_FitsWidth(t *testing.T) {
 	cols := BuildColumns(120)
-	require.Len(t, cols, 8)
+	require.Len(t, cols, NumColumns)
 	total := 0
 	for _, c := range cols {
 		total += c.Width
 	}
-	// 7 separators * 3 + columns must be <= width.
-	assert.LessOrEqual(t, total+7*3, 120)
+	assert.LessOrEqual(t, total+(NumColumns-1)*3, 120)
 }
 
 func TestBuildColumns_Narrow(t *testing.T) {
-	// PRD NFR-08: minimum terminal is 80x24. Columns must fit at 80 cols.
 	cols := BuildColumns(80)
 	total := 0
 	for _, c := range cols {
 		total += c.Width
 		assert.GreaterOrEqual(t, c.Width, 4, "columns keep a minimum width")
 	}
-	assert.LessOrEqual(t, total+7*3, 80)
+	assert.LessOrEqual(t, total+(NumColumns-1)*3, 80)
 }
 
 func TestRowsFromSockets(t *testing.T) {
@@ -37,7 +37,7 @@ func TestRowsFromSockets(t *testing.T) {
 		{Protocol: netstat.ProtocolTCP, LocalAddr: "0.0.0.0", LocalPort: 22, State: netstat.StateListen, Inode: 1, PID: 100, ProcessName: "sshd", User: "root"},
 		{Protocol: netstat.ProtocolUnix, Path: "/tmp/sock", State: netstat.StateUnconnected, Inode: 2, PID: 0},
 	}
-	rows := RowsFromSockets(socks, NewStyle())
+	rows := RowsFromSockets(socks, NewStyle(false, false), RowOptions{})
 	require.Len(t, rows, 2)
 	assert.Contains(t, rows[0][ColProto], "TCP")
 	assert.Contains(t, rows[0][ColProto], "▶") // LISTEN symbol
@@ -47,25 +47,38 @@ func TestRowsFromSockets(t *testing.T) {
 	assert.Equal(t, "sshd", rows[0][ColProcess])
 	assert.Equal(t, "root", rows[0][ColUser])
 
-	// Unix ownerless row.
 	assert.Contains(t, rows[1][ColProto], "UNIX")
 	assert.Equal(t, "/tmp/sock", rows[1][ColLocal])
 	assert.Equal(t, "-", rows[1][ColPID])
 	assert.Equal(t, "-", rows[1][ColProcess])
 }
 
+func TestRowsFromSockets_ShowService(t *testing.T) {
+	socks := []netstat.SocketInfo{
+		{Protocol: netstat.ProtocolTCP, LocalAddr: "0.0.0.0", LocalPort: 22, State: netstat.StateListen, PID: 1},
+		{Protocol: netstat.ProtocolTCP, LocalAddr: "1.2.3.4", LocalPort: 9999, RemoteAddr: "5.6.7.8", RemotePort: 443, State: netstat.StateEstablished, PID: 2},
+	}
+	rows := RowsFromSockets(socks, NewStyle(false, false), RowOptions{ShowService: true})
+	assert.Contains(t, rows[0][ColLocal], "ssh")
+	assert.Contains(t, rows[1][ColRemote], "https")
+
+	rowsPort := RowsFromSockets(socks, NewStyle(false, false), RowOptions{})
+	assert.Contains(t, rowsPort[0][ColLocal], "22")
+	assert.Contains(t, rowsPort[1][ColRemote], "443")
+}
+
 func TestRowsFromSockets_ContainerShortID(t *testing.T) {
 	socks := []netstat.SocketInfo{
 		{Protocol: netstat.ProtocolTCP, LocalPort: 80, State: netstat.StateListen, PID: 1, ContainerID: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
 	}
-	rows := RowsFromSockets(socks, NewStyle())
+	rows := RowsFromSockets(socks, NewStyle(false, false), RowOptions{})
 	assert.Equal(t, "0123456789ab", rows[0][ColContainer], "container id truncated to 12")
 }
 
 func TestRemoteCell(t *testing.T) {
-	assert.Equal(t, "*", remoteCell(netstat.SocketInfo{Protocol: netstat.ProtocolTCP, RemoteAddr: "0.0.0.0", RemotePort: 0}))
-	assert.Equal(t, "1.2.3.4:5678", remoteCell(netstat.SocketInfo{Protocol: netstat.ProtocolTCP, RemoteAddr: "1.2.3.4", RemotePort: 5678}))
-	assert.Equal(t, "-", remoteCell(netstat.SocketInfo{Protocol: netstat.ProtocolUnix}))
+	assert.Equal(t, "*", remoteCell(netstat.SocketInfo{Protocol: netstat.ProtocolTCP, RemoteAddr: "0.0.0.0", RemotePort: 0}, false))
+	assert.Equal(t, "1.2.3.4:5678", remoteCell(netstat.SocketInfo{Protocol: netstat.ProtocolTCP, RemoteAddr: "1.2.3.4", RemotePort: 5678}, false))
+	assert.Equal(t, "-", remoteCell(netstat.SocketInfo{Protocol: netstat.ProtocolUnix}, false))
 }
 
 func TestStateCell(t *testing.T) {
@@ -84,20 +97,58 @@ func TestNoColor(t *testing.T) {
 func TestNewStyle_NoColor(t *testing.T) {
 	os.Setenv("NO_COLOR", "1")
 	t.Cleanup(func() { os.Unsetenv("NO_COLOR") })
-	s := NewStyle()
+	s := NewStyle(true, false)
 	assert.True(t, s.noColor)
-	// styleRow is a no-op when color is disabled.
 	row := RowsFromSockets([]netstat.SocketInfo{
 		{Protocol: netstat.ProtocolTCP, State: netstat.StateListen, PID: 1, LocalPort: 80},
-	}, s)
-	assert.NotContains(t, row[0][ColState], "\x1b") // no ANSI escape codes
+	}, s, RowOptions{})
+	assert.NotContains(t, row[0][ColState], "\x1b")
+}
+
+func TestNewStyle_Colorblind(t *testing.T) {
+	os.Unsetenv("NO_COLOR")
+	s := NewStyle(false, true)
+	assert.True(t, s.Colorblind())
+	assert.False(t, s.noColor)
+	// Colorblind palette should be populated.
+	assert.NotNil(t, s.stateStyles)
 }
 
 func TestStatusBar(t *testing.T) {
-	os.Unsetenv("NO_COLOR")
-	s := NewStyle()
+	s := NewStyle(false, false)
 	out := s.StatusBar("1.0.0", true, false, "2s", "TCP,LISTEN", 100)
 	assert.Contains(t, out, "pmtop 1.0.0")
 	assert.Contains(t, out, "[root]")
 	assert.Contains(t, out, "Filter: TCP,LISTEN")
+}
+
+func TestStatusBar_Truncation(t *testing.T) {
+	s := NewStyle(false, false)
+	out := s.StatusBar("1.0.0", true, false, "2s", strings.Repeat("X", 200), 80)
+	// Should not panic and should fit within 80 chars (visible width).
+	assert.LessOrEqual(t, lipgloss.Width(out), 80)
+}
+
+func TestSummaryBar(t *testing.T) {
+	s := NewStyle(false, false)
+	counts := []StateCount{
+		{State: netstat.StateListen, Label: "LISTEN", Count: 12},
+		{State: netstat.StateEstablished, Label: "ESTAB", Count: 8},
+	}
+	out := s.SummaryBar(counts, 100)
+	assert.Contains(t, out, "LISTEN:12")
+	assert.Contains(t, out, "ESTAB:8")
+}
+
+func TestColumnTitleForSort(t *testing.T) {
+	assert.Equal(t, "Proto", ColumnTitleForSort("Proto", false, true))
+	assert.Equal(t, "Proto ▲", ColumnTitleForSort("Proto", true, true))
+	assert.Equal(t, "Proto ▼", ColumnTitleForSort("Proto", true, false))
+}
+
+func TestSortColumnIndex(t *testing.T) {
+	assert.Equal(t, ColProto, SortColumnIndex(0))
+	assert.Equal(t, ColLocal, SortColumnIndex(1))
+	assert.Equal(t, ColPID, SortColumnIndex(5))
+	assert.Equal(t, -1, SortColumnIndex(99))
 }

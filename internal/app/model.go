@@ -1,11 +1,13 @@
 package app
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/pmtop/pmtop/internal/config"
 	"github.com/pmtop/pmtop/internal/filter"
@@ -31,6 +33,7 @@ const (
 	modeFilter             // 'f' filter form
 	modeDetail             // 'Enter' process detail side panel
 	modeSignal             // 'K' signal selection dialog
+	modeHelp               // 'F1' full-screen help overlay
 )
 
 // filterFields labels the inputs in the filter form, in order.
@@ -46,6 +49,7 @@ type Model struct {
 	interval time.Duration
 
 	paused   bool
+	manual   bool // refresh_interval="manual": no auto-tick
 	quitting bool
 
 	full  []netstat.SocketInfo // raw snapshot from the source
@@ -67,32 +71,43 @@ type Model struct {
 	sender SignalSender
 	cfg    config.Config
 
+	// display toggles
+	showService bool // 'p' key: show service names instead of port numbers
+
+	// help overlay
+	help bool // 'F1' toggles full-screen help
+
 	width, height int
 
 	lastRefresh time.Time
 	statusMsg   string
 	statusExp   time.Time
+	statusPerm  bool // true = status message persists until cleared
 	err         error
 }
 
 // New returns the initial Model. interval is the auto-refresh period
 // (default 2s per FR-02-01).
 func New(src DataSource, version string, root bool, interval time.Duration) Model {
-	style := ui.NewStyle()
+	style := ui.NewStyle(false, false)
 	tbl := table.New(
 		table.WithColumns(ui.BuildColumns(120)),
 		table.WithHeight(10),
+		table.WithStyles(table.Styles{
+			Header:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("7")),
+			Selected: lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236")),
+		}),
 	)
 	m := Model{
-		source:  src,
-		keys:    DefaultKeyMap(),
-		style:   style,
-		version: version,
-		root:    root,
+		source:   src,
+		keys:     DefaultKeyMap(),
+		style:    style,
+		version:  version,
+		root:     root,
 		interval: interval,
-		sortKey: SortProto,
-		sortAsc: true,
-		tbl:     tbl,
+		sortKey:  SortProto,
+		sortAsc:  true,
+		tbl:      tbl,
 	}
 	m.searchInput = newSearchInput()
 	m.filterInputs = newFilterInputs()
@@ -123,6 +138,9 @@ func newFilterInputs() []textinput.Model {
 
 // Init starts the first refresh and the refresh ticker.
 func (m Model) Init() tea.Cmd {
+	if m.manual {
+		return refreshCmd()
+	}
 	return tea.Batch(refreshCmd(), tickCmd(m.interval))
 }
 
@@ -141,7 +159,7 @@ func tickCmd(d time.Duration) tea.Cmd {
 
 // refresh performs a data snapshot, applies the filter, re-sorts, rebuilds
 // table rows, and preserves the cursor on the same socket when possible
-// (FR-02-01).
+// (FR-02-01). In detail mode, the detail panel data is also updated.
 func (m *Model) refresh() {
 	prev := m.socks
 	prevCursor := m.tbl.Cursor()
@@ -151,7 +169,14 @@ func (m *Model) refresh() {
 	m.err = err
 	if err == nil {
 		m.rebuild()
-		m.preserveCursor(prev, prevCursor)
+		// Don't move cursor while detail panel is open (prevents container info mismatch).
+		if m.mode != modeDetail {
+			m.preserveCursor(prev, prevCursor)
+		}
+		// Update detail panel data if open (for CPU% refresh).
+		if m.mode == modeDetail && m.detail != nil {
+			m.updateDetailData()
+		}
 	}
 	m.lastRefresh = time.Now()
 }
@@ -160,17 +185,57 @@ func (m *Model) refresh() {
 func (m *Model) rebuild() {
 	m.socks = filter.Apply(m.full, m.filt)
 	SortSockets(m.socks, m.sortKey, m.sortAsc)
-	m.tbl.SetRows(ui.RowsFromSockets(m.socks, m.style))
+	m.tbl.SetRows(ui.RowsFromSockets(m.socks, m.style, ui.RowOptions{
+		ShowService: m.showService,
+	}))
 }
 
-// applySort re-sorts the current (filtered) snapshot and rebuilds rows.
+// applySort re-sorts the current (filtered) snapshot, rebuilds rows, and
+// updates the column sort indicators.
 func (m *Model) applySort() {
-	if len(m.socks) == 0 {
-		return
+	if len(m.socks) > 0 {
+		SortSockets(m.socks, m.sortKey, m.sortAsc)
+		m.tbl.SetRows(ui.RowsFromSockets(m.socks, m.style, ui.RowOptions{
+			ShowService: m.showService,
+		}))
+		m.clampCursor()
 	}
-	SortSockets(m.socks, m.sortKey, m.sortAsc)
-	m.tbl.SetRows(ui.RowsFromSockets(m.socks, m.style))
-	m.clampCursor()
+	m.applySortIndicator()
+}
+
+// applySortIndicator updates column titles with ▲/▼ for the current sort.
+func (m *Model) applySortIndicator() {
+	cols := m.tbl.Columns()
+	sortCol := ui.SortColumnIndex(int(m.sortKey))
+	for i := range cols {
+		base := baseColumnTitle(i)
+		cols[i].Title = ui.ColumnTitleForSort(base, i == sortCol, m.sortAsc)
+	}
+	m.tbl.SetColumns(cols)
+}
+
+// baseColumnTitle returns the plain title for column index i.
+func baseColumnTitle(i int) string {
+	switch i {
+	case ui.ColProto:
+		return "Proto"
+	case ui.ColLocal:
+		return "Local"
+	case ui.ColRemote:
+		return "Remote"
+	case ui.ColState:
+		return "State"
+	case ui.ColPID:
+		return "PID"
+	case ui.ColProcess:
+		return "Process"
+	case ui.ColUser:
+		return "User"
+	case ui.ColContainer:
+		return "Container"
+	default:
+		return ""
+	}
 }
 
 // preserveCursor keeps the selection on the same socket across a refresh by
@@ -218,8 +283,10 @@ func (m *Model) clampCursor() {
 }
 
 // setStatus shows msg for dur (e.g. 3s for signal feedback per FR-06-04).
+// If dur is zero, the message persists until cleared (used for pause state).
 func (m *Model) setStatus(msg string, dur time.Duration) {
 	m.statusMsg = msg
+	m.statusPerm = dur == 0
 	m.statusExp = time.Now().Add(dur)
 }
 
@@ -256,11 +323,71 @@ func (m *Model) SetSignalSender(s SignalSender) {
 }
 
 // SetConfig applies runtime configuration (refresh interval, sort, colorblind,
-// etc.) after construction. Wired by cmd/pmtop from layered config + flags.
+// no-color, etc.) after construction. Wired by cmd/pmtop from layered config
+// + flags.
 func (m *Model) SetConfig(cfg config.Config) {
 	m.cfg = cfg
-	if d := cfg.Interval(); d > 0 {
+
+	// Refresh interval: "manual" means no auto-refresh.
+	if strings.ToLower(cfg.RefreshInterval) == "manual" {
+		m.manual = true
+	} else if d := cfg.Interval(); d > 0 {
 		m.interval = d
+	}
+
+	// Sort column and direction.
+	if cfg.SortColumn != "" {
+		if sk, ok := sortKeyFromConfig(cfg.SortColumn); ok {
+			m.sortKey = sk
+		}
+	}
+	m.sortAsc = cfg.SortAsc
+
+	// Rebuild style with color/no-color/colorblind settings.
+	m.style = ui.NewStyle(cfg.NoColor, cfg.ColorblindMode)
+	if cfg.NoColor {
+		m.tbl.SetStyles(table.Styles{
+			Header:   lipgloss.NewStyle().Bold(true),
+			Selected: lipgloss.NewStyle().Bold(true),
+		})
+	} else {
+		m.tbl.SetStyles(table.Styles{
+			Header:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("7")),
+			Selected: lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236")),
+		})
+	}
+
+	// Apply sort indicator to current columns.
+	m.applySortIndicator()
+
+	// Rebuild rows with new style if data is already loaded.
+	if m.full != nil {
+		m.rebuild()
+		m.clampCursor()
+	}
+}
+
+// sortKeyFromConfig maps a config sort column name to a SortKey.
+func sortKeyFromConfig(s string) (SortKey, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "proto", "protocol":
+		return SortProto, true
+	case "port":
+		return SortPort, true
+	case "local":
+		return SortLocal, true
+	case "remote":
+		return SortRemote, true
+	case "state":
+		return SortState, true
+	case "pid":
+		return SortPID, true
+	case "process":
+		return SortProcess, true
+	case "container":
+		return SortContainer, true
+	default:
+		return SortProto, false
 	}
 }
 
@@ -279,12 +406,13 @@ func (m *Model) Resize(width, height int) {
 	m.width = width
 	m.height = height
 	m.tbl.SetWidth(width)
-	h := height - 2
+	h := height - 3 // top status (1) + summary (1) + bottom hints (1)
 	if h < 3 {
 		h = 3
 	}
 	m.tbl.SetHeight(h)
 	m.tbl.SetColumns(ui.BuildColumns(width))
+	m.applySortIndicator()
 }
 
 // RefreshNow forces a data refresh without waiting for a tick. Intended for

@@ -21,6 +21,8 @@
 | M7 | 手册与补全 | ✅ 完成 | VM `pmtop man` 生成 11 个 man 页（pmtop.8 含 NAME/SYNOPSIS/DESCRIPTION/EXAMPLES）；bash/zsh/fish 补全生成正常 |
 | M8 | CI/CD 与打包 | ✅ 完成 | `make build-all` 交叉编译 amd64(11M)+arm64(9.9M) 静态 stripped ELF；goreleaser/ci/release YAML 语法校验通过；nfpm/AUR/homebrew 配置就绪 |
 | M9 | 发布准备 | ✅ 完成 | docs/INSTALL.md（apt/dnf/AUR/brew/源码安装指南）；CONTRIBUTING.md（贡献指南）；VM 全量验证通过；root 标志改 PersistentFlags 修复子命令前用 --no-elevate |
+| v0.1.0 | 首次发布 | ✅ 完成 | GitHub Release v0.1.0 已发布（deb/rpm/tar.gz amd64+arm64）；CI 全绿；分支保护启用 |
+| TUI 优化 | 参考 rustnet+htop 重构 TUI | ✅ 完成 | 修复 13 个 Bug（SetConfig/manual/colorblind/F1 帮助/详情滚动/CPU%/状态栏溢出/暂停持久/容器信息错位等）+ 视觉重设计（摘要行/排序指示器/行高亮/底栏重设计）+ 交互优化（vim g/G/鼠标/服务名切换 p/紧凑过滤表单）；app 80.6% / ui 80.2% |
 
 ## 详细日志
 
@@ -153,3 +155,8 @@
 | 2026-06-26 | M9 修复 `--no-elevate` 子命令前识别（`Flags()` → `PersistentFlags()`） | 通过 |
 | 2026-06-26 | M9 VM 全量验证：测试、构建、list/json/csv/TSV、info/kill、man、completion | 通过 |
 | 2026-06-26 | 推送到 `github.com/pmtop/pmtop` 并配置 CI/CD：gh auth、分支保护（status checks+admin enforce）、PR #1 lint fix merged、CI 全部通过 | 通过 |
+| 2026-06-26 | v0.1.0 Release：tag 推送触发 goreleaser，deb/rpm smoke test 通过，release 发布（PR #2/#3 合并修复 AUR 移除+rpm curl 冲突） | 通过 |
+| 2026-06-29 | TUI 优化 Phase 1：SetConfig 应用全部配置（C1/C2/C3）、F1 帮助覆层接线（I2）、fmt.Fprintf 修复多余空格（V1）、CPU% 计算（V2）、搜索底栏（L1）、状态栏截断（L3）、详情高度+滚动（L4/I3）、状态消息保留提示（V5）、暂停持久（I5）、详情模式暂停 tick+容器从 PID 查找（F3/Q4） | 通过 |
+| 2026-06-29 | TUI 优化 Phase 2：单行连接统计摘要（LISTEN:12 ESTAB:8...）、列标题排序指示器 ▲/▼、选中行整行高亮、颜色优化（LISTEN 绿粗/ESTAB 青/TIMEWAIT 黄/CLOSEWAIT 红）、底栏重设计（状态消息叠加右侧不替换提示） | 通过 |
+| 2026-06-29 | TUI 优化 Phase 3：vim g/G 跳首尾、鼠标点击选行+滚轮滚动、p 键切换服务名/端口、F1/? 全屏帮助覆层、详情面板可滚动+字段对齐、过滤表单紧凑双列布局 | 通过 |
+| 2026-06-29 | TUI 优化验证：`go test -race -cover ./...` app 80.6%/ui 80.2%，`go vet` 通过，`golangci-lint` 通过，`go build` 15.9M 二进制 `pmtop version`/`pmtop list --json` 正常 | 通过 |

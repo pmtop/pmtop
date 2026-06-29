@@ -109,7 +109,7 @@ func TestReadProcess(t *testing.T) {
 	assert.Equal(t, "root", pi.Group)
 	assert.Equal(t, uint64(2381*1024), pi.VmRSS)
 	// starttime ticks=23, HZ=100, btime=1781656942 -> 1781656942 + 0 = ...
-	assert.Equal(t, time.Unix(1781656942+int64(23)/defaultHZ, 0).UTC(), pi.StartTime)
+	assert.Equal(t, time.Unix(1781656942+int64(23)/DefaultHZ, 0).UTC(), pi.StartTime)
 }
 
 func TestReadProcess_MissingOptional(t *testing.T) {

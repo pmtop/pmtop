@@ -8,53 +8,83 @@ import (
 	"github.com/pmtop/pmtop/internal/ui"
 )
 
-// detailView renders the process detail side panel (PRD 6.2).
-func (m Model) detailView(width int) string {
+// detailView renders the process detail side panel (PRD 6.2) with scroll
+// support and height constraint.
+func (m Model) detailView(width, height int) string {
 	if m.detail == nil {
-		return ui.Box("Process Detail", "(no selection)", width)
+		return ui.Box("Process Detail", "(no selection)", width, 0)
 	}
 	d := m.detail
-	var sb strings.Builder
-	w := fmt.Fprintln
+	var lines []string
 
 	if d.err != nil {
-		_, _ = w(&sb, "error: ", d.err)
+		lines = append(lines, "error: "+d.err.Error())
 	}
 	p := d.proc
-	_, _ = w(&sb, "PID:        ", p.PID)
-	_, _ = w(&sb, "PPID:       ", p.PPID)
-	_, _ = w(&sb, "Name:       ", p.Name)
-	_, _ = w(&sb, "User:       ", p.User, " (", p.UID, ")")
-	_, _ = w(&sb, "Command:    ", p.Cmdline)
-	_, _ = w(&sb, "Exe Path:   ", p.Exe)
-	_, _ = w(&sb, "CWD:        ", p.CWD)
-	_, _ = w(&sb, "Start:      ", p.StartTime)
-	_, _ = w(&sb, "MEM:        ", humanBytes(p.VmRSS), "   CPU: -")
+	lines = append(lines,
+		fmt.Sprintf("PID:        %d", p.PID),
+		fmt.Sprintf("PPID:       %d", p.PPID),
+		fmt.Sprintf("Name:       %s", p.Name),
+		fmt.Sprintf("User:       %s (%d)", p.User, p.UID),
+		fmt.Sprintf("Command:    %s", p.Cmdline),
+		fmt.Sprintf("Exe Path:   %s", p.Exe),
+		fmt.Sprintf("CWD:        %s", p.CWD),
+		fmt.Sprintf("Start:      %s", p.StartTime.Format("2006-01-02 15:04:05")),
+		fmt.Sprintf("MEM:        %s (RSS)  %s (VSZ)", humanBytes(p.VmRSS), humanBytes(p.VmSize)),
+		fmt.Sprintf("CPU:        %.1f%%", d.cpuPct),
+	)
+
 	if d.pkgName != "" {
-		_, _ = w(&sb, "Package:    ", d.pkgName, " (dpkg/rpm)")
+		lines = append(lines, fmt.Sprintf("Package:    %s (dpkg/rpm)", d.pkgName))
 	} else if d.pkgErr != nil {
-		_, _ = w(&sb, "Package:    -")
+		lines = append(lines, "Package:    -")
 	}
+
 	// Container association.
 	s := m.currentContainerInfo()
 	if s.Runtime != "" {
-		_, _ = w(&sb, "Container:  ", s.Runtime, " ", shortID(s.ContainerID))
+		lines = append(lines, fmt.Sprintf("Container:  %s %s", s.Runtime, shortID(s.ContainerID)))
 		if s.ContainerName != "" {
-			_, _ = w(&sb, "  Name: ", s.ContainerName)
+			lines = append(lines, "  Name: "+s.ContainerName)
 		}
 		if s.ContainerImage != "" {
-			_, _ = w(&sb, "  Image: ", s.ContainerImage)
+			lines = append(lines, "  Image: "+s.ContainerImage)
 		}
 		if s.ContainerStatus != "" {
-			_, _ = w(&sb, "  Status: ", s.ContainerStatus)
+			lines = append(lines, "  Status: "+s.ContainerStatus)
 		}
 	} else {
-		_, _ = w(&sb, "Container:  -")
+		lines = append(lines, "Container:  -")
 	}
+
 	if len(d.cg.Lines) > 0 {
-		_, _ = w(&sb, "Cgroup:     ", d.cg.Version, " ", d.cg.Lines[0].Path)
+		lines = append(lines, fmt.Sprintf("Cgroup:     v%d %s", d.cg.Version, d.cg.Lines[0].Path))
 	}
-	return ui.Box("Process Detail (PID "+itoa(d.pid)+")", sb.String(), width)
+
+	// Apply scroll offset.
+	maxContentHeight := height - 4 // status(1) + box border(2) + hints(1)
+	if maxContentHeight < 3 {
+		maxContentHeight = 3
+	}
+	scroll := d.scroll
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > len(lines)-maxContentHeight && len(lines) > maxContentHeight {
+		scroll = len(lines) - maxContentHeight
+	}
+	end := scroll + maxContentHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visible := lines[scroll:end]
+	content := strings.Join(visible, "\n")
+
+	if scroll > 0 || end < len(lines) {
+		content += fmt.Sprintf("\n[%d-%d/%d]", scroll+1, end, len(lines))
+	}
+
+	return ui.Box("Process Detail (PID "+itoa(d.pid)+")", content, width, height-2)
 }
 
 // signalView renders the signal-selection dialog and optional confirmation
@@ -78,11 +108,7 @@ func (m Model) signalView(width int) string {
 		confirm := fmt.Sprintf("Confirm: send %s to %s (PID %d)?\n[Enter] yes   [Esc] no", sig.Name, st.name, st.pid)
 		return ui.Dialog(title, sb.String()+"\n"+confirm, width)
 	}
-	if st.result != "" {
-		sb.WriteString("\n")
-		sb.WriteString(st.result)
-	}
-	return ui.Box(title, sb.String(), width)
+	return ui.Box(title, sb.String(), width, 0)
 }
 
 // shortID returns the first 12 chars of a container id, or the whole id.
