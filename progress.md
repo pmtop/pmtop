@@ -162,3 +162,4 @@
 | 2026-06-29 | TUI 优化验证：`go test -race -cover ./...` app 80.6%/ui 80.2%，`go vet` 通过，`golangci-lint` 通过，`go build` 15.9M 二进制 `pmtop version`/`pmtop list --json` 正常 | 通过 |
 | 2026-06-29 | v0.1.1 Release：TUI 优化版发布（deb/rpm/tar.gz amd64+arm64），PR #4 merged，CI 全绿 | 通过 |
 | 2026-06-29 | TUI 分屏重构：左右分屏布局（左表格+右详情/信号面板），行序号列，详情面板始终可见跟随光标，F9 触发信号面板右下区域，ensureHeight 安全网防残留。移除 modeDetail/Enter/K 键。app 82.7%/ui 77.4%，vet+lint 通过 | 通过 |
+| 2026-06-29 | v0.1.2 Release：分屏 TUI 重构版发布，PR #5 merged → 提交 ece5237，CI 全绿，Release 发布 deb/rpm/tar.gz amd64+arm64 | 通过 |
